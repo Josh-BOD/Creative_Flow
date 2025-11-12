@@ -115,7 +115,19 @@ Output: ID-8F3D5A91_EN_Hentai_NSFW_Generic_Seras.mp4
 
 ## CSV Output
 
-The system generates `tracking/creative_inventory.csv` with:
+The system generates **two CSV files**:
+
+1. **Session CSV** (`tracking/creative_inventory_session.csv`)
+   - Contains ONLY files from current run
+   - Overwritten each time
+   - Use for importing new files
+
+2. **Master CSV** (`tracking/creative_inventory.csv`)
+   - Contains ALL files ever processed
+   - Appended to each run
+   - Complete historical inventory
+
+**Both CSVs include:**
 
 | Column | Description |
 |--------|-------------|
@@ -126,16 +138,17 @@ The system generates `tracking/creative_inventory.csv` with:
 | language | Language code (EN, ES, FR, etc.) |
 | category | Content category |
 | content_type | SFW or NSFW |
-| creative_type | video, image, or short_video |
+| creative_type | video, image, short_video, native_video, native_image |
 | duration_seconds | Video duration (0 for images) |
 | aspect_ratio | Aspect ratio (e.g., 16:9, 9:16) |
 | width_px | Width in pixels |
 | height_px | Height in pixels |
 | file_size_mb | File size in MB |
-| file_format | File format (mp4, jpg, etc.) |
+| file_format | File format (mp4, jpg, png, etc.) |
 | date_processed | Processing date |
 | source_path | Original file location |
 | notes | Processing notes |
+| native_pair_id | Links native video/image pairs |
 
 ## Creative Type Classification
 
@@ -147,15 +160,23 @@ The system generates `tracking/creative_inventory.csv` with:
 
 ```
 Creative Flow/
-├── venv/                           # Virtual environment (gitignored)
+├── venv/                                    # Virtual environment (gitignored)
 ├── scripts/
-│   └── creative_processor.py       # Main processing script
-├── source_files/                   # Place files here (organized in subfolders)
-├── uploaded/                       # Processed files (renamed)
+│   ├── creative_processor.py                # Main processing script
+│   └── native_converter.py                  # Native ad format converter
+├── source_files/                            # Place files here (organized in subfolders)
+│   ├── native/                              # Files for native ad conversion (optional)
+│   └── [category folders]/                  # Regular creative folders
+├── uploaded/                                # Processed files (renamed)
+│   ├── Native/                              # Native ad creatives (if processed)
+│   │   ├── Video/                           # 640x360 native videos
+│   │   └── Image/                           # 640x360 native thumbnails
+│   └── [renamed files]                      # Regular processed files
 ├── tracking/
-│   ├── creative_inventory.csv     # Master tracking spreadsheet
-│   ├── metadata_defaults.csv      # Folder/creator defaults
-│   └── processed_ids.json         # Used IDs (prevents duplicates)
+│   ├── creative_inventory.csv               # Master inventory (all time)
+│   ├── creative_inventory_session.csv       # Session inventory (current run)
+│   ├── metadata_defaults.csv                # Folder/creator defaults
+│   └── processed_ids.json                   # Used IDs (prevents duplicates)
 ├── TODO/
 │   ├── Questions.md
 │   └── plan.md

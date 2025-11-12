@@ -26,7 +26,7 @@ except ImportError:
 class CreativeProcessor:
     """Main processor for creative assets"""
     
-    def __init__(self, base_path, dry_run=False, interactive=True, force_reprocess=False):
+    def __init__(self, base_path, dry_run=False, interactive=True, force_reprocess=False, native=False):
         self.base_path = Path(base_path)
         self.source_dir = self.base_path / "source_files"
         self.upload_dir = self.base_path / "uploaded"
@@ -35,10 +35,21 @@ class CreativeProcessor:
         self.interactive = interactive
         self.force_reprocess = force_reprocess
         
+        # File type mappings (must be defined before _detect_native_folder)
+        self.video_extensions = {'.mp4', '.mov', '.avi', '.webm', '.mkv', '.flv', '.wmv'}
+        self.image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+        
+        # Native processing modes:
+        # - force_native: --native flag forces ALL videos to native format
+        # - native_mode: native folder exists (only process files IN that folder)
+        self.force_native = native
+        self.native_mode = self._detect_native_folder()
+        
         # File paths
         self.ids_file = self.tracking_dir / "processed_ids.json"
         self.defaults_file = self.tracking_dir / "metadata_defaults.csv"
-        self.output_csv = self.tracking_dir / "creative_inventory.csv"
+        self.output_csv = self.tracking_dir / "creative_inventory.csv"  # Master inventory (cumulative)
+        self.session_csv = self.tracking_dir / "creative_inventory_session.csv"  # Current session only
         
         # Data storage
         self.processed_ids = self._load_processed_ids()
@@ -48,9 +59,12 @@ class CreativeProcessor:
         self.new_folders_added = {}  # Track folders added during this session
         self.skipped_count = 0  # Track already-processed files
         
-        # File type mappings
-        self.video_extensions = {'.mp4', '.mov', '.avi', '.webm', '.mkv', '.flv', '.wmv'}
-        self.image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'}
+        # Native output directories (create if either force_native or native_mode)
+        if self.force_native or self.native_mode:
+            self.native_video_dir = self.upload_dir / "Native" / "Video"
+            self.native_image_dir = self.upload_dir / "Native" / "Image"
+            self.native_video_dir.mkdir(parents=True, exist_ok=True)
+            self.native_image_dir.mkdir(parents=True, exist_ok=True)
         
     def _load_processed_ids(self):
         """Load list of already processed unique IDs"""
@@ -58,6 +72,22 @@ class CreativeProcessor:
             with open(self.ids_file, 'r') as f:
                 return set(json.load(f))
         return set()
+    
+    def _detect_native_folder(self):
+        """Check if source_files/native/ folder exists"""
+        native_folder = self.source_dir / "native"
+        return native_folder.exists() and native_folder.is_dir()
+    
+    def _is_native_file(self, file_path):
+        """Check if a specific file is inside the source_files/native/ folder"""
+        try:
+            native_folder = self.source_dir / "native"
+            # Check if file_path is relative to native_folder
+            file_path.relative_to(native_folder)
+            return True
+        except ValueError:
+            # File is not inside native folder
+            return False
     
     def _save_processed_id(self, unique_id):
         """Save a new unique ID to prevent duplicates"""
@@ -460,10 +490,11 @@ class CreativeProcessor:
         
         return 'unknown'
     
-    def generate_new_filename(self, unique_id, metadata, file_ext, duration_seconds=None):
+    def generate_new_filename(self, unique_id, metadata, file_ext, duration_seconds=None, is_native_original=False):
         """
         Generate new filename: Lang_Category_Type_Name_Creator_Duration_ID.ext
         For videos: EN_Ahegao_NSFW_Generic_Seras_5sec_ID-F40623FA.mp4
+        For native originals: ORG_EN_Ahegao_NSFW_Generic_Seras_5sec_ID-F40623FA.mp4
         For images: EN_Ahegao_NSFW_Generic_Seras_ID-F40623FA.jpg
         """
         parts = [
@@ -491,8 +522,159 @@ class CreativeProcessor:
             sanitized = re.sub(r'[^a-zA-Z0-9-]', '', str(part))
             sanitized_parts.append(sanitized)
         
-        new_filename = '_'.join(sanitized_parts) + file_ext
+        # Add ORG_ prefix if this is an original that will be converted to native
+        if is_native_original:
+            new_filename = 'ORG_' + '_'.join(sanitized_parts) + file_ext
+        else:
+            new_filename = '_'.join(sanitized_parts) + file_ext
+        
         return new_filename
+    
+    def _generate_native_filename(self, unique_id, metadata, prefix, duration_seconds=None):
+        """
+        Generate filename with VID_/IMG_ prefix and -VID/-IMG suffix.
+        For videos: VID_EN_Ahegao_NSFW_Generic_Seras_4sec_ID-F40623FA-VID.mp4
+        For images: IMG_EN_Ahegao_NSFW_Generic_Seras_ID-F40623FA-IMG.png
+        
+        Args:
+            unique_id: Base unique ID (e.g., "ID-F40623FA")
+            metadata: Metadata dict with language, category, etc.
+            prefix: 'VID' or 'IMG'
+            duration_seconds: Include for videos, None for images
+        
+        Returns:
+            Formatted filename string
+        """
+        parts = [
+            prefix,
+            metadata.get('language', 'UNK'),
+            metadata.get('category', 'UNK'),
+            metadata.get('content_type', 'UNK'),
+            metadata.get('creative_name', 'Generic'),
+            metadata.get('creator_name', 'UNK')
+        ]
+        
+        # Add duration for videos (rounded to nearest second)
+        if duration_seconds is not None and duration_seconds > 0:
+            duration_sec = int(round(duration_seconds))
+            parts.append(f"{duration_sec}sec")
+        
+        # Add unique ID with suffix at the end
+        parts.append(f"{unique_id}-{prefix}")
+        
+        # Sanitize each part
+        sanitized_parts = []
+        for part in parts:
+            if part is None:
+                part = 'UNK'
+            # Remove special characters, keep alphanumeric and hyphens
+            sanitized = re.sub(r'[^a-zA-Z0-9-]', '', str(part))
+            sanitized_parts.append(sanitized)
+        
+        # Set extension based on prefix
+        ext = '.mp4' if prefix == 'VID' else '.png'
+        
+        return '_'.join(sanitized_parts) + ext
+    
+    def _process_native_pair(self, file_path, base_id, metadata, original_tech_metadata):
+        """
+        Process video for native format, creating video + image pair.
+        
+        Args:
+            file_path: Path to original video file
+            base_id: Base unique ID (e.g., "ID-F40623FA")
+            metadata: Metadata dict with language, category, etc.
+            original_tech_metadata: Original video technical metadata
+        
+        Returns:
+            List of 2 records (video and image) for CSV
+        """
+        try:
+            from native_converter import NativeConverter
+            
+            converter = NativeConverter()
+            
+            # Get file size
+            file_size_mb = round(file_path.stat().st_size / (1024 * 1024), 2)
+            
+            # Generate filenames with VID_/IMG_ prefixes and -VID/-IMG suffixes
+            # Native videos are max 4 seconds, so use 4 as placeholder for filename
+            video_filename = self._generate_native_filename(
+                base_id, metadata, 'VID', 4.0
+            )
+            image_filename = self._generate_native_filename(
+                base_id, metadata, 'IMG', None
+            )
+            
+            video_path = self.native_video_dir / video_filename
+            image_path = self.native_image_dir / image_filename
+            
+            print(f"  Converting to native format:")
+            print(f"    Video: {video_filename}")
+            print(f"    Image: {image_filename}")
+            
+            # Convert using native_converter
+            if not self.dry_run:
+                result = converter.convert_video(file_path, video_path, image_path)
+                
+                if not result['success']:
+                    print(f"  ✗ Native conversion failed: {result.get('error', 'Unknown error')}")
+                    return []
+                
+                actual_duration = result.get('duration', 4.0)
+                print(f"  ✓ Native conversion successful ({actual_duration}s)")
+            else:
+                print(f"  [DRY RUN] Would convert to native format")
+                actual_duration = 4.0  # Placeholder for dry run
+            
+            # Create inventory records for both
+            video_record = {
+                'unique_id': f"{base_id}-VID",
+                'original_filename': file_path.name,
+                'new_filename': video_filename,
+                'creator_name': metadata.get('creator_name', ''),
+                'language': metadata.get('language', ''),
+                'category': metadata.get('category', ''),
+                'content_type': metadata.get('content_type', ''),
+                'creative_type': 'native_video',
+                'duration_seconds': actual_duration if not self.dry_run else 4.0,
+                'aspect_ratio': '16:9',  # Native videos are 640x360 = 16:9
+                'width_px': 640,
+                'height_px': 360,
+                'file_size_mb': file_size_mb if not self.dry_run else round(file_size_mb * 0.3, 2),  # Estimate
+                'file_format': 'mp4',
+                'date_processed': datetime.now().strftime('%Y-%m-%d'),
+                'source_path': str(file_path.relative_to(self.base_path)),
+                'notes': 'Native video conversion',
+                'native_pair_id': base_id
+            }
+            
+            image_record = {
+                'unique_id': f"{base_id}-IMG",
+                'original_filename': file_path.name,
+                'new_filename': image_filename,
+                'creator_name': metadata.get('creator_name', ''),
+                'language': metadata.get('language', ''),
+                'category': metadata.get('category', ''),
+                'content_type': metadata.get('content_type', ''),
+                'creative_type': 'native_image',
+                'duration_seconds': 0,
+                'aspect_ratio': '16:9',  # Native images are 640x360 = 16:9
+                'width_px': 640,
+                'height_px': 360,
+                'file_size_mb': 0.5 if self.dry_run else round(Path(image_path).stat().st_size / (1024 * 1024), 2),
+                'file_format': 'png',
+                'date_processed': datetime.now().strftime('%Y-%m-%d'),
+                'source_path': str(file_path.relative_to(self.base_path)),
+                'notes': 'Native image thumbnail',
+                'native_pair_id': base_id
+            }
+            
+            return [video_record, image_record]
+            
+        except Exception as e:
+            print(f"  ✗ Error processing native pair: {e}")
+            return []
     
     def process_file(self, file_path):
         """Process a single file"""
@@ -546,9 +728,13 @@ class CreativeProcessor:
         creative_type = self.classify_creative_type(file_path, tech_metadata)
         print(f"Creative type: {creative_type}")
         
+        # Check if this file will be processed as native
+        will_process_native = (self.force_native or self._is_native_file(file_path)) and ext in self.video_extensions
+        
         # Generate new filename (pass duration for videos)
+        # Add ORG_ prefix if this is an original that will be converted to native
         duration = tech_metadata.get('duration_seconds', 0) if ext in self.video_extensions else None
-        new_filename = self.generate_new_filename(unique_id, metadata, ext, duration)
+        new_filename = self.generate_new_filename(unique_id, metadata, ext, duration, is_native_original=will_process_native)
         print(f"New filename: {new_filename}")
         
         # Get file size
@@ -572,8 +758,16 @@ class CreativeProcessor:
             'file_format': ext.replace('.', ''),
             'date_processed': datetime.now().strftime('%Y-%m-%d'),
             'source_path': str(file_path.relative_to(self.base_path)),
-            'notes': notes
+            'notes': notes,
+            'native_pair_id': ''  # Empty for non-native files
         }
+        
+        # Process native format if determined above (will_process_native)
+        native_records = []
+        if will_process_native:
+            native_records = self._process_native_pair(
+                file_path, unique_id, metadata, tech_metadata
+            )
         
         # Move/rename file
         if not self.dry_run:
@@ -592,6 +786,9 @@ class CreativeProcessor:
         else:
             print(f"[DRY RUN] Would move to: uploaded/{new_filename}")
         
+        # Return list of records (original + native pair if applicable)
+        if native_records:
+            return [record] + native_records
         return record
     
     def process_all_files(self):
@@ -607,6 +804,10 @@ class CreativeProcessor:
             print(f"Force reprocess: ENABLED (will reprocess all files)")
         else:
             print(f"Duplicate detection: ENABLED (skips already processed files)")
+        if self.force_native:
+            print(f"Native mode: FORCED (will process ALL videos as native ads)")
+        elif self.native_mode:
+            print(f"Native folder detected: Will process files in source_files/native/ as native ads")
         print(f"{'='*80}\n")
         
         if not self.source_dir.exists():
@@ -642,9 +843,13 @@ class CreativeProcessor:
         # Process each file
         for file_path in all_files:
             try:
-                record = self.process_file(file_path)
-                if record:
-                    self.inventory_data.append(record)
+                records = self.process_file(file_path)
+                if records:
+                    # Handle both single record and list of records (native pairs)
+                    if isinstance(records, list):
+                        self.inventory_data.extend(records)
+                    else:
+                        self.inventory_data.append(records)
             except Exception as e:
                 print(f"ERROR processing {file_path.name}: {e}")
                 continue
@@ -659,17 +864,31 @@ class CreativeProcessor:
         
         # Generate CSV
         if self.inventory_data:
-            df = pd.DataFrame(self.inventory_data)
+            df_session = pd.DataFrame(self.inventory_data)
             
             if not self.dry_run:
-                df.to_csv(self.output_csv, index=False)
+                # Save session CSV (current run only)
+                df_session.to_csv(self.session_csv, index=False)
+                
+                # Append to master CSV (cumulative inventory)
+                if self.output_csv.exists():
+                    # Load existing master inventory
+                    df_master = pd.read_csv(self.output_csv)
+                    # Append new records
+                    df_combined = pd.concat([df_master, df_session], ignore_index=True)
+                    df_combined.to_csv(self.output_csv, index=False)
+                else:
+                    # Create new master inventory
+                    df_session.to_csv(self.output_csv, index=False)
+                
                 print(f"\n{'='*80}")
                 print(f"✓ Processing complete!")
                 print(f"✓ Processed {len(self.inventory_data)} new file(s)")
                 if self.skipped_count > 0:
                     print(f"✓ Skipped {self.skipped_count} already-processed file(s)")
                 print(f"✓ Files moved to: uploaded/")
-                print(f"✓ CSV saved to: {self.output_csv.relative_to(self.base_path)}")
+                print(f"✓ Session CSV: {self.session_csv.relative_to(self.base_path)}")
+                print(f"✓ Master CSV: {self.output_csv.relative_to(self.base_path)}")
                 if self.new_folders_added:
                     print(f"✓ Added {len(self.new_folders_added)} new folder(s) to metadata defaults")
                 print(f"✓ Empty source folders cleaned up")
@@ -679,11 +898,12 @@ class CreativeProcessor:
                 print(f"[DRY RUN] Would process {len(self.inventory_data)} file(s)")
                 if self.skipped_count > 0:
                     print(f"[DRY RUN] Would skip {self.skipped_count} already-processed file(s)")
-                print(f"[DRY RUN] Would save CSV to: {self.output_csv.relative_to(self.base_path)}")
+                print(f"[DRY RUN] Would save session CSV to: {self.session_csv.relative_to(self.base_path)}")
+                print(f"[DRY RUN] Would append to master CSV: {self.output_csv.relative_to(self.base_path)}")
                 print(f"{'='*80}\n")
             
-            # Print summary
-            self.print_summary(df)
+            # Print summary (for current session)
+            self.print_summary(df_session)
     
     def print_summary(self, df):
         """Print processing summary statistics"""
@@ -722,6 +942,7 @@ def main():
     parser.add_argument('--dry-run', action='store_true', help='Preview processing without making changes')
     parser.add_argument('--no-interactive', action='store_true', help='Disable interactive prompts for unknown folders')
     parser.add_argument('--force-reprocess', action='store_true', help='Reprocess files even if already in inventory CSV')
+    parser.add_argument('--native', action='store_true', help='Force native processing for ALL videos (normally only processes files in source_files/native/)')
     parser.add_argument('--path', default=None, help='Base path for Creative Flow project (defaults to parent of script directory)')
     
     args = parser.parse_args()
@@ -737,7 +958,8 @@ def main():
         base_path, 
         dry_run=args.dry_run, 
         interactive=not args.no_interactive,
-        force_reprocess=args.force_reprocess
+        force_reprocess=args.force_reprocess,
+        native=args.native
     )
     processor.process_all_files()
 
