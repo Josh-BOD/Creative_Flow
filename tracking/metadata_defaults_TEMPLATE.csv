@@ -1,0 +1,35 @@
+# METADATA DEFAULTS TEMPLATE
+# This file defines default values for files in each folder
+# When processing Pattern 2 files (video-XXXXXXXX.mp4), these defaults are applied
+#
+# HOW TO USE:
+# 1. Copy a line from the examples below
+# 2. Edit the values for your folder
+# 3. Add it to metadata_defaults.csv
+#
+# COLUMNS:
+# - folder_path: Name of the folder in source_files/ (e.g., "Hentai", "My Anime Folder")
+# - category_name: The canonical category name to use in output (e.g., "Hentai", "Anime")
+#                  Use this to standardize categories even if folder names vary
+# - creator_name: Who created these assets (e.g., "Seras", "Pedro", "Maria")
+# - language: Language code (e.g., "EN", "ES", "FR", "JP")
+# - content_type: SFW or NSFW
+# - creative_description: Default name if filename doesn't have one (e.g., "Generic", "Special")
+#
+# EXAMPLE ENTRIES:
+# folder_path,category_name,creator_name,language,content_type,creative_description
+# Hentai,Hentai,Seras,EN,NSFW,Generic
+# Anime,Anime,Pedro,EN,SFW,Anime-Special
+# Solo-Female,Solo-Female,Maria,ES,NSFW,Solo
+# Rubbing Pussy w Masturbation,Female Masturbation,Seras,EN,NSFW,Generic
+# My Old Folder Name,Standardized Category,Alex,FR,NSFW,CC-Special
+# Lesbian,Lesbian,Jordan,EN,SFW,Couples
+#
+# TIPS:
+# - folder_path = actual folder name on disk
+# - category_name = what appears in the output (keeps categories uniform)
+# - Multiple folders can map to the same category_name for standardization
+# - You can edit this file in Excel, Google Sheets, or any text editor
+# - Don't use commas in your values (they're CSV separators)
+# - If a folder isn't listed, the script will ask you for the info interactively
+
