@@ -55,10 +55,11 @@ class UploadManager:
         # Upload logs subdirectory (keeps tracking folder clean)
         self.upload_logs_dir = self.tracking_dir / "upload_logs"
         self.screenshot_dir = self.upload_logs_dir / "screenshots"
+        self.upload_csv_dir = self.tracking_dir / "Upload_CSV"
         
         # Ensure directories exist
         for directory in [self.tracking_dir, self.archive_dir, self.upload_logs_dir, 
-                          self.screenshot_dir, self.session_dir]:
+                          self.screenshot_dir, self.session_dir, self.upload_csv_dir]:
             directory.mkdir(parents=True, exist_ok=True)
         
         # Session CSV path
@@ -72,6 +73,45 @@ class UploadManager:
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         self.upload_status_csv = self.upload_logs_dir / f"upload_status_{timestamp}.csv"
         self.upload_results = []
+        
+        # Batch tracking
+        self.batch_id = self._get_next_batch_id()
+    
+    def _get_next_batch_id(self) -> str:
+        """
+        Get the next batch ID by checking existing Upload_CSV files.
+        
+        Returns:
+            Batch ID as string (e.g., "001")
+        """
+        try:
+            # Find all existing batch CSVs
+            existing_csvs = list(self.upload_csv_dir.glob("Batch*_*.csv"))
+            
+            if not existing_csvs:
+                return "001"
+            
+            # Extract batch numbers
+            batch_numbers = []
+            for csv_file in existing_csvs:
+                # Format: Batch001_Date_Time_Type.csv
+                parts = csv_file.stem.split('_')
+                if parts and parts[0].startswith('Batch'):
+                    try:
+                        batch_num = int(parts[0].replace('Batch', ''))
+                        batch_numbers.append(batch_num)
+                    except ValueError:
+                        continue
+            
+            if batch_numbers:
+                next_batch = max(batch_numbers) + 1
+                return f"{next_batch:03d}"
+            else:
+                return "001"
+                
+        except Exception as e:
+            self.logger.warning(f"Error getting batch ID: {e}, defaulting to 001")
+            return "001"
     
     def _setup_logger(self) -> logging.Logger:
         """Set up logging for upload manager."""
@@ -252,6 +292,96 @@ class UploadManager:
                 
         except Exception as e:
             self.logger.error(f"Failed to update master CSV: {e}")
+    
+    def _generate_tj_tool_csvs(self):
+        """Generate TJ_tool compatible CSVs for campaign uploads."""
+        import pandas as pd
+        
+        try:
+            # Load master CSV with Creative IDs
+            if not self.master_csv.exists():
+                self.logger.warning("Master CSV not found, skipping TJ_tool CSV generation")
+                return
+            
+            df = pd.read_csv(self.master_csv)
+            
+            # Filter only files with TJ Creative IDs (uploaded)
+            df_uploaded = df[df['tj_creative_id'].notna() & (df['tj_creative_id'] != '')]
+            
+            if df_uploaded.empty:
+                self.logger.info("No uploaded files with Creative IDs to export")
+                return
+            
+            # Generate timestamp and batch ID for naming
+            date_time = datetime.now().strftime('%Y%m%d_%H%M%S')
+            batch_id = self.batch_id
+            
+            # === GENERATE NATIVE CSV ===
+            # Filter native videos and images (VID_ and IMG_ prefixes)
+            native_videos = df_uploaded[df_uploaded['new_filename'].str.startswith('VID_', na=False)].copy()
+            native_images = df_uploaded[df_uploaded['new_filename'].str.startswith('IMG_', na=False)].copy()
+            
+            if not native_videos.empty and not native_images.empty:
+                # Extract base ID (strip -VID and -IMG suffixes)
+                native_videos['base_id'] = native_videos['unique_id'].str.replace('-VID', '', regex=False)
+                native_images['base_id'] = native_images['unique_id'].str.replace('-IMG', '', regex=False)
+                
+                # Merge video and image pairs on base_id
+                native_pairs = pd.merge(
+                    native_videos[['base_id', 'tj_creative_id', 'new_filename', 'category']],
+                    native_images[['base_id', 'tj_creative_id']],
+                    on='base_id',
+                    suffixes=('_video', '_image')
+                )
+                
+                if not native_pairs.empty:
+                    # Create Native CSV in TJ_tool format
+                    native_csv = pd.DataFrame({
+                        'Ad Name': native_pairs['new_filename'].str.replace('.mp4', '', regex=False),
+                        'Target URL': 'PLACEHOLDER_URL',  # User will fill this in
+                        'Video Creative ID': native_pairs['tj_creative_id_video'].astype(int),
+                        'Thumbnail Creative ID': native_pairs['tj_creative_id_image'].astype(int),
+                        'Headline': native_pairs['category'].fillna('PLACEHOLDER_HEADLINE'),
+                        'Brand Name': 'PLACEHOLDER_BRAND'
+                    })
+                    
+                    # Save with proper naming: Batch{id}_Date_Time_Native.csv
+                    native_csv_path = self.upload_csv_dir / f"Batch{batch_id}_{date_time}_Native.csv"
+                    native_csv.to_csv(native_csv_path, index=False, quoting=1)  # quoting=1 quotes all fields
+                    self.logger.info(f"✓ Generated Native CSV: {native_csv_path.name} ({len(native_csv)} pairs)")
+            
+            # === GENERATE PREROLL CSV ===
+            # Filter regular files (no IMG_, VID_, or ORG_ prefixes)
+            preroll_files = df_uploaded[
+                ~df_uploaded['new_filename'].str.startswith(('IMG_', 'VID_', 'ORG_'), na=False)
+            ].copy()
+            
+            if not preroll_files.empty:
+                # Create Preroll CSV in TJ_tool format
+                preroll_csv = pd.DataFrame({
+                    'Ad Name': preroll_files['new_filename'].str.replace(r'\.(mp4|jpg|png|gif)$', '', regex=True),
+                    'Target URL': 'PLACEHOLDER_URL',  # User will fill this in
+                    'Creative ID': preroll_files['tj_creative_id'].astype(int),
+                    'Custom CTA Text': 'PLACEHOLDER_CTA',
+                    'Custom CTA URL': 'PLACEHOLDER_URL',
+                    'Banner CTA Creative ID': '',
+                    'Banner CTA Title': '',
+                    'Banner CTA Subtitle': '',
+                    'Banner CTA URL': '',
+                    'Tracking Pixel': ''
+                })
+                
+                # Save with proper naming: Batch{id}_Date_Time_Preroll.csv
+                preroll_csv_path = self.upload_csv_dir / f"Batch{batch_id}_{date_time}_Preroll.csv"
+                preroll_csv.to_csv(preroll_csv_path, index=False)
+                self.logger.info(f"✓ Generated Preroll CSV: {preroll_csv_path.name} ({len(preroll_csv)} files)")
+            
+            self.logger.info("✓ TJ_tool CSVs generated successfully")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to generate TJ_tool CSVs: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
     
     def _group_files_by_type(self, files: List[Dict]) -> Dict[str, List[Dict]]:
         """Group files by creative type for batch uploading."""
@@ -527,6 +657,9 @@ class UploadManager:
                 # Update master CSV with Creative IDs
                 if summary['successful'] > 0:
                     self._update_master_csv()
+                    
+                    # Generate TJ_tool compatible CSVs
+                    self._generate_tj_tool_csvs()
         
         except Exception as e:
             self.logger.error(f"Fatal error during upload: {e}")
