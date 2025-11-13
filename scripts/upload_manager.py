@@ -167,6 +167,224 @@ class UploadManager:
         except Exception as e:
             self.logger.warning(f"Could not update TJ Library cache: {e}")
     
+    def refresh_tj_library_cache(self) -> Dict:
+        """
+        Refresh the entire TJ Creative Library cache by scraping all Creative IDs from TJ.
+        
+        This is a one-time (or periodic) operation to populate/rebuild the cache.
+        Uses pagination to scrape all pages of TJ Media Library.
+        
+        Returns:
+            Summary dict with statistics
+        """
+        summary = {
+            'total_scraped': 0,
+            'pages_scraped': 0,
+            'cache_updated': False,
+            'error': None
+        }
+        
+        try:
+            from scripts.uploaders.tj_auth import TJAuthenticator
+            
+            self.logger.info("=" * 60)
+            self.logger.info("Refreshing TJ Creative Library Cache")
+            self.logger.info("=" * 60)
+            self.logger.info("This will scrape all Creative IDs from TJ Media Library...")
+            
+            # Launch browser and authenticate
+            with sync_playwright() as p:
+                browser = p.chromium.launch(
+                    headless=self.config.get('headless', False),
+                    slow_mo=self.config.get('slow_mo', 100)
+                )
+                
+                self.logger.info("Browser launched")
+                
+                # Try to restore session
+                authenticator = TJAuthenticator(
+                    username=self.config['tj_username'],
+                    password=self.config['tj_password'],
+                    session_dir=self.session_dir
+                )
+                
+                context = authenticator.load_session(browser)
+                
+                if context:
+                    page = context.new_page()
+                    page.set_default_timeout(self.config.get('timeout', 30000))
+                    
+                    self.logger.info("Checking if saved session is still valid...")
+                    page.goto('https://advertiser.trafficjunky.com/media-library', wait_until='domcontentloaded')
+                    
+                    if authenticator.is_logged_in(page):
+                        self.logger.info("✓ Logged in using saved session")
+                    else:
+                        self.logger.warning("Saved session expired, need to login again")
+                        context.close()
+                        context = None
+                
+                # If no valid session, do manual login
+                if not context:
+                    context = browser.new_context(viewport={'width': 1920, 'height': 1080})
+                    page = context.new_page()
+                    page.set_default_timeout(self.config.get('timeout', 30000))
+                    
+                    self.logger.info("No valid session found, manual login required...")
+                    
+                    if not authenticator.manual_login(page, timeout=120):
+                        self.logger.error("Authentication failed or timed out")
+                        browser.close()
+                        summary['error'] = "Authentication failed"
+                        return summary
+                    
+                    # Save session for future use
+                    authenticator.save_session(context)
+                    self.logger.info("✓ Logged into TrafficJunky (session saved)")
+                
+                # Navigate to Media Library
+                self.logger.info("Navigating to Media Library...")
+                page.goto('https://advertiser.trafficjunky.com/media-library', wait_until='networkidle')
+                time.sleep(1)
+                
+                # Scrape all pages
+                all_creatives = []
+                current_page = 1
+                max_pages = 100  # Safety limit
+                
+                while current_page <= max_pages:
+                    self.logger.info(f"Scraping page {current_page}...")
+                    time.sleep(0.5)
+                    
+                    # Get all creative containers on current page
+                    containers = page.locator('div.creativeContainer[data-id]')
+                    count = containers.count()
+                    
+                    if count == 0 and current_page == 1:
+                        self.logger.info("Media Library is empty")
+                        break
+                    
+                    # Extract data from each creative
+                    for i in range(count):
+                        try:
+                            container = containers.nth(i)
+                            
+                            # Get Creative ID from data-id attribute
+                            creative_id = container.get_attribute('data-id')
+                            if not creative_id:
+                                continue
+                            
+                            # Get filename from label.creativeName
+                            name_label = container.locator('label.creativeName').first
+                            filename = name_label.text_content() if name_label.count() > 0 else ''
+                            
+                            # Get dimensions
+                            dimensions_span = container.locator('span.dimensions').first
+                            dimensions = dimensions_span.text_content() if dimensions_span.count() > 0 else ''
+                            
+                            # Get file type
+                            file_type_span = container.locator('span.fileType').first
+                            file_type = file_type_span.text_content() if file_type_span.count() > 0 else ''
+                            file_type = file_type.replace('.', '').strip()  # Remove leading dot
+                            
+                            # Get review status
+                            review_span = container.locator('span.reviewStatus').first
+                            review_status = review_span.get_attribute('data-review-status') if review_span.count() > 0 else 'unknown'
+                            
+                            if filename and creative_id:
+                                all_creatives.append({
+                                    'creative_id': creative_id.strip(),
+                                    'filename': filename.strip(),
+                                    'upload_date': datetime.now().strftime('%Y-%m-%d'),
+                                    'dimensions': dimensions.strip(),
+                                    'file_type': file_type,
+                                    'creative_type': '',  # Can't determine from TJ UI
+                                    'review_status': review_status
+                                })
+                        
+                        except Exception as e:
+                            self.logger.debug(f"Error extracting creative at index {i}: {e}")
+                    
+                    self.logger.info(f"  Page {current_page}: Found {count} creatives")
+                    summary['pages_scraped'] = current_page
+                    
+                    # Check for "Next" button
+                    next_button_selectors = [
+                        'a.page-link:has-text("Next")',
+                        'button:has-text("Next")',
+                        'a[rel="next"]',
+                        'li.next:not(.disabled) a',
+                        'a.pagination-next',
+                        '.pagination .next a'
+                    ]
+                    
+                    next_button = None
+                    for selector in next_button_selectors:
+                        try:
+                            btn = page.locator(selector).first
+                            if btn.count() > 0 and btn.is_visible(timeout=1000):
+                                # Check if button is not disabled
+                                is_disabled = False
+                                try:
+                                    parent = btn.locator('xpath=..').first
+                                    if parent.get_attribute('class') and 'disabled' in parent.get_attribute('class'):
+                                        is_disabled = True
+                                except:
+                                    pass
+                                
+                                if not is_disabled:
+                                    next_button = btn
+                                    break
+                        except:
+                            continue
+                    
+                    # If no next button, we're done
+                    if not next_button:
+                        self.logger.info(f"  No more pages (reached page {current_page})")
+                        break
+                    
+                    # Click next page
+                    try:
+                        next_button.click()
+                        time.sleep(1.5)  # Wait for page to load
+                        current_page += 1
+                    except Exception as e:
+                        self.logger.debug(f"Could not click next button: {e}")
+                        break
+                
+                browser.close()
+                
+                # Save to CSV
+                if all_creatives:
+                    import pandas as pd
+                    df = pd.DataFrame(all_creatives)
+                    
+                    # Remove duplicates (in case of pagination issues)
+                    df = df.drop_duplicates(subset=['creative_id'], keep='first')
+                    
+                    # Save to CSV (overwrite existing)
+                    df.to_csv(self.tj_library_csv, index=False)
+                    
+                    # Reload cache
+                    self._load_tj_library_cache()
+                    
+                    summary['total_scraped'] = len(df)
+                    summary['cache_updated'] = True
+                    
+                    self.logger.info("=" * 60)
+                    self.logger.info(f"✓ Scraped {len(df)} Creative IDs from {current_page} pages")
+                    self.logger.info(f"✓ TJ Creative Library cache updated: {self.tj_library_csv}")
+                    self.logger.info("=" * 60)
+                else:
+                    self.logger.warning("No creatives found on TJ Media Library")
+                
+                return summary
+                
+        except Exception as e:
+            self.logger.error(f"Failed to refresh TJ Library cache: {e}")
+            summary['error'] = str(e)
+            return summary
+    
     def _get_next_batch_id(self) -> str:
         """
         Get the next batch ID by checking existing Upload_CSV files.
@@ -865,6 +1083,12 @@ Examples:
     )
     
     parser.add_argument(
+        '--refresh-library',
+        action='store_true',
+        help='Refresh TJ Creative Library cache by scraping all Creative IDs from TJ Media Library'
+    )
+    
+    parser.add_argument(
         '--force',
         action='store_true',
         help='Force re-upload even if Creative ID already exists'
@@ -947,6 +1171,31 @@ def main():
     
     # Create Upload Manager
     manager = UploadManager(base_path, config)
+    
+    # Check if --refresh-library flag is set
+    if args.refresh_library:
+        print("="*60)
+        print("TJ Creative Library Cache Refresh")
+        print("="*60)
+        print("This will scrape ALL Creative IDs from TJ Media Library")
+        print("This may take a few minutes depending on library size...")
+        print("="*60)
+        print()
+        
+        summary = manager.refresh_tj_library_cache()
+        
+        if summary.get('error'):
+            print(f"\n❌ Error: {summary['error']}")
+            return 1
+        else:
+            print("\n" + "="*60)
+            print("✅ Cache Refresh Complete!")
+            print("="*60)
+            print(f"Total Creative IDs scraped: {summary['total_scraped']}")
+            print(f"Pages scraped: {summary['pages_scraped']}")
+            print(f"Cache file: {manager.tj_library_csv}")
+            print("="*60)
+            return 0
     
     print("="*60)
     print("Creative Flow Upload Manager")
