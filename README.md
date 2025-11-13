@@ -260,7 +260,9 @@ python3 scripts/upload_manager.py --session --live
 
 ### Documentation
 - **Setup Guide**: `UPLOAD_SETUP.md` - Complete setup instructions
+- **Cache System**: `CACHE_SYSTEM.md` - How the TJ Library cache works (instant duplicate detection!)
 - **Duplicate Detection**: `DUPLICATE_DETECTION.md` - How Creative ID validation works
+- **Pagination & Batching**: `PAGINATION_AND_BATCHING.md` - Handling TJ's paginated interface
 - **Implementation Plan**: `TODO/plan3.md` - Full technical specification
 - **Phase 1 Summary**: `PHASE1_COMPLETE.md` - What's working now
 
