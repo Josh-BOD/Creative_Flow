@@ -251,10 +251,13 @@ The Creative Flow system now includes an **automated upload module** for uploadi
 cp config/env_template.txt config/.env
 # Edit config/.env with your TJ username/password
 
-# 3. Test with dry-run
+# 3. **IMPORTANT:** Populate the Creative ID cache (first time only)
+python3 scripts/upload_manager.py --refresh-library
+
+# 4. Test with dry-run
 python3 scripts/upload_manager.py --session --verbose
 
-# 4. Live upload
+# 5. Live upload
 python3 scripts/upload_manager.py --session --live
 ```
 
@@ -269,6 +272,9 @@ python3 scripts/upload_manager.py --session --live
 ### Command Examples
 
 ```bash
+# FIRST TIME: Populate cache with all existing TJ Creative IDs
+python3 scripts/upload_manager.py --refresh-library
+
 # Upload from session CSV (dry-run)
 python3 scripts/upload_manager.py --session
 
@@ -283,6 +289,9 @@ python3 scripts/upload_manager.py --session --force
 
 # Verbose logging
 python3 scripts/upload_manager.py --session --verbose
+
+# Weekly maintenance: Refresh cache to sync with TJ
+python3 scripts/upload_manager.py --refresh-library
 ```
 
 **Status**: Phase 1 complete! Authentication, file validation, and upload infrastructure working. Actual upload loop coming in Phase 2.
