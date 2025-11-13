@@ -9,6 +9,7 @@ import sys
 import json
 import secrets
 import re
+import shutil
 from pathlib import Path
 from datetime import datetime
 import subprocess
@@ -31,6 +32,7 @@ class CreativeProcessor:
         self.source_dir = self.base_path / "source_files"
         self.upload_dir = self.base_path / "uploaded"
         self.tracking_dir = self.base_path / "tracking"
+        self.converted_dir = self.base_path / "Converted"  # Archive of processed source files
         self.dry_run = dry_run
         self.interactive = interactive
         self.force_reprocess = force_reprocess
@@ -140,7 +142,7 @@ class CreativeProcessor:
         if self.defaults_file.exists():
             df = pd.read_csv(self.defaults_file)
         else:
-            df = pd.DataFrame(columns=['folder_path', 'category_name', 'creator_name', 'language', 'content_type', 'creative_description'])
+            df = pd.DataFrame(columns=['folder_path', 'category_name', 'model_sex', 'style', 'creator_name', 'language', 'content_type', 'creative_description', 'test_id'])
         
         # Add new folders
         new_rows = []
@@ -148,10 +150,13 @@ class CreativeProcessor:
             new_rows.append({
                 'folder_path': folder,
                 'category_name': defaults.get('category_name', folder),  # Default to folder name if not specified
+                'model_sex': defaults.get('model_sex', 'MFT'),
+                'style': defaults.get('style', 'Both'),
                 'creator_name': defaults['creator_name'],
                 'language': defaults['language'],
                 'content_type': defaults['content_type'],
-                'creative_description': defaults.get('creative_description', 'Generic')
+                'creative_description': defaults.get('creative_description', 'Generic'),
+                'test_id': defaults.get('test_id', None)
             })
         
         # Append and save
@@ -196,6 +201,7 @@ class CreativeProcessor:
                         
                         print(f"\n✓ Using defaults from '{selected_folder}'")
                         print(f"  Category: {category_name}")
+                        print(f"  Model Sex: {defaults.get('model_sex', 'MFT')}, Style: {defaults.get('style', 'Both')}")
                         print(f"  Creator: {defaults.get('creator_name')}, Language: {defaults.get('language')}, Type: {defaults.get('content_type')}, Description: {defaults.get('creative_description')}")
                         print(f"\n💡 TIP: Consider renaming your folder from '{folder_name}' to '{selected_folder}' to avoid this prompt next time!")
                         
@@ -222,8 +228,37 @@ class CreativeProcessor:
         if not creator_name:
             creator_name = "Unknown"
         
+        # Get model sex
+        print("\nModel Sex Options:")
+        print("  M   = Male")
+        print("  F   = Female")
+        print("  T   = Trans")
+        print("  MFT = All")
+        while True:
+            model_sex = input("Model Sex (M/F/T/MFT, default: MFT): ").strip().upper()
+            if not model_sex:
+                model_sex = "MFT"
+                break
+            if model_sex in ['M', 'F', 'T', 'MFT']:
+                break
+            print("Please enter M, F, T, or MFT")
+        
+        # Get style
+        print("\nStyle Options:")
+        print("  Anime = Animated/cartoon style")
+        print("  Real  = Realistic/live action")
+        print("  Both  = Mix of both styles")
+        while True:
+            style = input("Style (Anime/Real/Both, default: Both): ").strip().capitalize()
+            if not style:
+                style = "Both"
+                break
+            if style in ['Anime', 'Real', 'Both']:
+                break
+            print("Please enter Anime, Real, or Both")
+        
         # Get language
-        language = input("Language Code (e.g., EN, ES, FR, JP): ").strip().upper()
+        language = input("\nLanguage Code (e.g., EN, ES, FR, JP): ").strip().upper()
         if not language:
             language = "EN"
         
@@ -239,17 +274,28 @@ class CreativeProcessor:
         if not creative_desc:
             creative_desc = "Generic"
         
+        # Get test ID (optional)
+        test_id = input("\nTest ID (optional, e.g., 001, 002, leave blank if none): ").strip()
+        if not test_id:
+            test_id = None
+        
         defaults = {
             'category_name': folder_name,  # By default, category name = folder name
+            'model_sex': model_sex,
+            'style': style,
             'creator_name': creator_name,
             'language': language,
             'content_type': content_type,
-            'creative_description': creative_desc
+            'creative_description': creative_desc,
+            'test_id': test_id
         }
         
         print(f"\n✓ Created new defaults for '{folder_name}' folder")
         print(f"  Category: {folder_name}")
+        print(f"  Model Sex: {model_sex}, Style: {style}")
         print(f"  Creator: {creator_name}, Language: {language}, Type: {content_type}, Description: {creative_desc}")
+        if test_id:
+            print(f"  Test ID: {test_id}")
         
         # Save to session cache and metadata_defaults dict
         self.new_folders_added[folder_name] = defaults
@@ -378,7 +424,11 @@ class CreativeProcessor:
     
     def parse_structured_filename(self, filename):
         """
-        Parse Pattern 1: (Language)_(Category)_(Type)_(Creative-Name)_(Your-Name).ext
+        Parse Pattern 1 Structured Filenames:
+        
+        NEW FORMAT (7+ parts): Lang_Category_ModelSex_Style_Rating_Type_Creator
+        OLD FORMAT (5-6 parts): Lang_Category_Rating_Type_Creator (no ModelSex/Style)
+        
         Returns dict with extracted data or None if doesn't match
         """
         # Remove extension
@@ -387,15 +437,30 @@ class CreativeProcessor:
         # Split by underscore
         parts = name_without_ext.split('_')
         
-        # Need at least 5 parts for structured pattern
-        if len(parts) >= 5:
+        # NEW FORMAT: 7+ parts with ModelSex and Style
+        if len(parts) >= 7:
+            return {
+                'language': parts[0],
+                'category': parts[1],
+                'model_sex': parts[2],
+                'style': parts[3],
+                'content_type': parts[4],
+                'creative_name': parts[5],
+                'creator_name': parts[6]
+            }
+        
+        # OLD FORMAT: 5-6 parts without ModelSex/Style
+        # These will get model_sex and style from folder defaults
+        elif len(parts) >= 5:
             return {
                 'language': parts[0],
                 'category': parts[1],
                 'content_type': parts[2],
                 'creative_name': parts[3],
                 'creator_name': parts[4]
+                # model_sex and style will be filled from folder defaults
             }
+        
         return None
     
     def parse_simple_filename(self, filename):
@@ -426,14 +491,28 @@ class CreativeProcessor:
         metadata = {
             'language': None,
             'category': None,
+            'model_sex': None,
+            'style': None,
             'content_type': None,
             'creative_name': None,
-            'creator_name': None
+            'creator_name': None,
+            'test_id': None
         }
         
         # If we have parsed data from structured filename, use it
         if parsed_data:
             metadata.update(parsed_data)
+            
+            # If model_sex or style are missing (OLD format), try to get from folder defaults
+            if not metadata.get('model_sex') or not metadata.get('style'):
+                folder_category = self.get_folder_category(file_path)
+                if folder_category and folder_category in self.metadata_defaults:
+                    defaults = self.metadata_defaults[folder_category]
+                    if not metadata.get('model_sex'):
+                        metadata['model_sex'] = defaults.get('model_sex', 'MFT')
+                    if not metadata.get('style'):
+                        metadata['style'] = defaults.get('style', 'Both')
+            
             return metadata, "Pattern 1 (Structured)"
         
         # Otherwise, try to get from folder defaults
@@ -445,20 +524,26 @@ class CreativeProcessor:
                 defaults = self.metadata_defaults[folder_category]
                 # Use category_name from CSV if available, otherwise use folder name
                 metadata['category'] = defaults.get('category_name', folder_category)
+                metadata['model_sex'] = defaults.get('model_sex', 'MFT')
+                metadata['style'] = defaults.get('style', 'Both')
                 metadata['creator_name'] = defaults.get('creator_name')
                 metadata['language'] = defaults.get('language')
                 metadata['content_type'] = defaults.get('content_type')
                 metadata['creative_name'] = defaults.get('creative_description', 'Generic')
+                metadata['test_id'] = defaults.get('test_id', None)  # Optional test ID
                 return metadata, "Pattern 2 (Simple), defaults applied"
             
             # If interactive mode and folder not in defaults, prompt user
             if self.interactive and not self.dry_run:
                 defaults = self._prompt_for_folder_defaults(folder_category)
                 metadata['category'] = defaults.get('category_name', folder_category)
+                metadata['model_sex'] = defaults.get('model_sex', 'MFT')
+                metadata['style'] = defaults.get('style', 'Both')
                 metadata['creator_name'] = defaults.get('creator_name')
                 metadata['language'] = defaults.get('language')
                 metadata['content_type'] = defaults.get('content_type')
                 metadata['creative_name'] = defaults.get('creative_description', 'Generic')
+                metadata['test_id'] = defaults.get('test_id', None)  # Optional test ID
                 return metadata, "Pattern 2 (Simple), interactive defaults added"
             
             # No match in CSV and not interactive, use folder name as category
@@ -492,14 +577,22 @@ class CreativeProcessor:
     
     def generate_new_filename(self, unique_id, metadata, file_ext, duration_seconds=None, is_native_original=False):
         """
-        Generate new filename: Lang_Category_Type_Name_Creator_Duration_ID.ext
-        For videos: EN_Ahegao_NSFW_Generic_Seras_5sec_ID-F40623FA.mp4
-        For native originals: ORG_EN_Ahegao_NSFW_Generic_Seras_5sec_ID-F40623FA.mp4
-        For images: EN_Ahegao_NSFW_Generic_Seras_ID-F40623FA.jpg
+        Generate new filename: Lang_Category_ModelSex_Style_Rating_Type_Creator_Duration_T-TestID_ID.ext
+        
+        For videos with test: EN_Ahegao_F_Anime_NSFW_Generic_Seras_5sec_T-001_ID-F40623FA.mp4
+        For videos no test: EN_Ahegao_F_Anime_NSFW_Generic_Seras_5sec_ID-F40623FA.mp4
+        For native originals: ORG_EN_Ahegao_F_Anime_NSFW_Generic_Seras_5sec_T-001_ID-F40623FA.mp4
+        For images: EN_Ahegao_F_Anime_NSFW_Generic_Seras_T-001_ID-F40623FA.jpg
+        
+        ModelSex: M=Male, F=Female, T=Trans, MFT=All
+        Style: Anime, Real, Both
+        TestID: Optional test identifier (e.g., 001, 002)
         """
         parts = [
             metadata.get('language', 'UNK'),
             metadata.get('category', 'UNK'),
+            metadata.get('model_sex', 'MFT'),  # NEW: M, F, T, or MFT
+            metadata.get('style', 'Both'),      # NEW: Anime, Real, or Both
             metadata.get('content_type', 'UNK'),
             metadata.get('creative_name', 'Generic'),
             metadata.get('creator_name', 'UNK')
@@ -509,6 +602,11 @@ class CreativeProcessor:
         if duration_seconds is not None and duration_seconds > 0:
             duration_sec = int(round(duration_seconds))
             parts.append(f"{duration_sec}sec")
+        
+        # Add test ID if present (skip if None, NaN, or empty)
+        test_id = metadata.get('test_id')
+        if test_id and str(test_id).strip() and str(test_id).lower() != 'nan':
+            parts.append(f"T-{test_id}")
         
         # Add unique ID at the end
         parts.append(unique_id)
@@ -533,12 +631,12 @@ class CreativeProcessor:
     def _generate_native_filename(self, unique_id, metadata, prefix, duration_seconds=None):
         """
         Generate filename with VID_/IMG_ prefix and -VID/-IMG suffix.
-        For videos: VID_EN_Ahegao_NSFW_Generic_Seras_4sec_ID-F40623FA-VID.mp4
-        For images: IMG_EN_Ahegao_NSFW_Generic_Seras_ID-F40623FA-IMG.png
+        For videos: VID_EN_Ahegao_F_Anime_NSFW_Generic_Seras_4sec_T-001_ID-F40623FA-VID.mp4
+        For images: IMG_EN_Ahegao_F_Anime_NSFW_Generic_Seras_T-001_ID-F40623FA-IMG.png
         
         Args:
             unique_id: Base unique ID (e.g., "ID-F40623FA")
-            metadata: Metadata dict with language, category, etc.
+            metadata: Metadata dict with language, category, model_sex, style, test_id, etc.
             prefix: 'VID' or 'IMG'
             duration_seconds: Include for videos, None for images
         
@@ -549,6 +647,8 @@ class CreativeProcessor:
             prefix,
             metadata.get('language', 'UNK'),
             metadata.get('category', 'UNK'),
+            metadata.get('model_sex', 'MFT'),  # NEW: M, F, T, or MFT
+            metadata.get('style', 'Both'),      # NEW: Anime, Real, or Both
             metadata.get('content_type', 'UNK'),
             metadata.get('creative_name', 'Generic'),
             metadata.get('creator_name', 'UNK')
@@ -558,6 +658,11 @@ class CreativeProcessor:
         if duration_seconds is not None and duration_seconds > 0:
             duration_sec = int(round(duration_seconds))
             parts.append(f"{duration_sec}sec")
+        
+        # Add test ID if present (skip if None, NaN, or empty)
+        test_id = metadata.get('test_id')
+        if test_id and str(test_id).strip() and str(test_id).lower() != 'nan':
+            parts.append(f"T-{test_id}")
         
         # Add unique ID with suffix at the end
         parts.append(f"{unique_id}-{prefix}")
@@ -771,6 +876,15 @@ class CreativeProcessor:
         
         # Move/rename file
         if not self.dry_run:
+            # Archive original file to Converted/ (preserving folder structure)
+            relative_path = file_path.relative_to(self.source_dir)
+            converted_path = self.converted_dir / relative_path
+            converted_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Copy original to Converted/ before moving
+            shutil.copy2(file_path, converted_path)
+            
+            # Move renamed file to uploaded/
             new_path = self.upload_dir / new_filename
             # Handle duplicate filenames
             counter = 1
@@ -783,6 +897,7 @@ class CreativeProcessor:
             file_path.rename(new_path)
             self._save_processed_id(unique_id)
             print(f"✓ Moved to: {new_path.relative_to(self.base_path)}")
+            print(f"  Original archived: {converted_path.relative_to(self.base_path)}")
         else:
             print(f"[DRY RUN] Would move to: uploaded/{new_filename}")
         
@@ -887,11 +1002,13 @@ class CreativeProcessor:
                 if self.skipped_count > 0:
                     print(f"✓ Skipped {self.skipped_count} already-processed file(s)")
                 print(f"✓ Files moved to: uploaded/")
+                print(f"✓ Originals archived: Converted/ (preserves folder structure)")
                 print(f"✓ Session CSV: {self.session_csv.relative_to(self.base_path)}")
                 print(f"✓ Master CSV: {self.output_csv.relative_to(self.base_path)}")
                 if self.new_folders_added:
                     print(f"✓ Added {len(self.new_folders_added)} new folder(s) to metadata defaults")
                 print(f"✓ Empty source folders cleaned up")
+                print(f"\n💡 To reprocess: cp -r Converted/* source_files/")
                 print(f"{'='*80}\n")
             else:
                 print(f"\n{'='*80}")

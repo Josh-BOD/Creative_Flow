@@ -564,23 +564,13 @@ class UploadManager:
             (is_valid, error_message)
         """
         new_filename = file_record.get('new_filename')
+        creative_type = file_record.get('creative_type', '')
         
         if not new_filename:
             return False, "Missing filename"
         
-        # Determine file path based on creative_type
-        creative_type = file_record.get('creative_type', '')
-        
-        if 'native_video' in creative_type:
-            file_path = self.uploaded_dir / "Native" / "Video" / new_filename
-        elif 'native_image' in creative_type:
-            file_path = self.uploaded_dir / "Native" / "Image" / new_filename
-        elif 'video' in creative_type or 'short_video' in creative_type:
-            file_path = self.uploaded_dir / "Video" / new_filename
-        elif 'image' in creative_type:
-            file_path = self.uploaded_dir / "Image" / new_filename
-        else:
-            file_path = self.uploaded_dir / new_filename
+        # Use _get_file_path for consistent path resolution
+        file_path = self._get_file_path(file_record)
         
         if not file_path.exists():
             return False, f"File not found: {file_path}"
@@ -593,6 +583,23 @@ class UploadManager:
             if file_size_kb > 300:
                 return False, f"Native image too large: {file_size_kb:.1f}KB (max 300KB)"
         
+        # Check video duration for In-Stream videos (TrafficJunky: 5-31 seconds)
+        if 'video' in creative_type or 'short_video' in creative_type:
+            if 'native' not in creative_type:  # Only for regular In-Stream videos
+                duration_seconds = file_record.get('duration_seconds', '')
+                if duration_seconds:
+                    try:
+                        # Convert to float (already in seconds from CSV)
+                        total_seconds = float(duration_seconds)
+                        
+                        # TrafficJunky In-Stream video limits: 5-31 seconds
+                        if total_seconds < 5:
+                            return False, f"In-Stream video too short: {total_seconds:.1f}s (min 5s)"
+                        if total_seconds > 31:
+                            return False, f"In-Stream video too long: {total_seconds:.1f}s (max 31s)"
+                    except Exception as e:
+                        logger.warning(f"Could not parse duration_seconds '{duration_seconds}': {e}")
+        
         return True, None
     
     def _get_file_path(self, file_record: Dict) -> Optional[Path]:
@@ -600,14 +607,12 @@ class UploadManager:
         new_filename = file_record.get('new_filename')
         creative_type = file_record.get('creative_type', '')
         
+        # Native files have specific subdirectories
         if 'native_video' in creative_type:
             return self.uploaded_dir / "Native" / "Video" / new_filename
         elif 'native_image' in creative_type:
             return self.uploaded_dir / "Native" / "Image" / new_filename
-        elif 'video' in creative_type or 'short_video' in creative_type:
-            return self.uploaded_dir / "Video" / new_filename
-        elif 'image' in creative_type:
-            return self.uploaded_dir / "Image" / new_filename
+        # Regular files (video, image, short_video) are stored directly in uploaded/
         else:
             return self.uploaded_dir / new_filename
     

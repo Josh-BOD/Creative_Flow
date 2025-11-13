@@ -167,6 +167,9 @@ Creative Flow/
 ├── source_files/                            # Place files here (organized in subfolders)
 │   ├── native/                              # Files for native ad conversion (optional)
 │   └── [category folders]/                  # Regular creative folders
+├── Converted/                               # ✨ Archive of original files (mirrors source_files/)
+│   ├── native/                              # Original native files
+│   └── [category folders]/                  # Original files by folder
 ├── uploaded/                                # Processed files (renamed)
 │   ├── Native/                              # Native ad creatives (if processed)
 │   │   ├── Video/                           # 640x360 native videos
@@ -202,12 +205,42 @@ python3 scripts/creative_processor.py
 python3 scripts/creative_processor.py --path "/path/to/project"
 ```
 
+## 🔄 Reprocessing Files
+
+The system automatically archives **original files** to `Converted/` (preserving the exact folder structure). This allows you to easily reprocess files if you:
+- Update metadata defaults
+- Change naming conventions
+- Fix configuration errors
+
+### To Reprocess All Files:
+
+```bash
+# 1. Clear processed data
+rm -rf uploaded/* tracking/processed_ids.json tracking/creative_inventory*.csv
+
+# 2. Restore original files from archive
+cp -r Converted/* source_files/
+
+# 3. Reprocess
+python3 scripts/creative_processor.py
+```
+
+### To Reprocess Specific Folders:
+
+```bash
+# Example: Reprocess only native files
+cp -r Converted/native/* source_files/native/
+python3 scripts/creative_processor.py
+```
+
+**Note:** The `Converted/` folder is gitignored and acts as your safety net. Original files remain untouched there while processed files go to `uploaded/`.
+
 ## Tips
 
 1. **Always run dry-run first** to preview changes
 2. **Maintain folder structure** when downloading from Google Drive (folder names = categories)
 3. **Update metadata_defaults.csv** before processing new batches
-4. **Back up original files** before first run
+4. **Original files are auto-archived** to `Converted/` - no manual backup needed!
 5. **Check summary output** for files needing manual review
 
 ## Troubleshooting

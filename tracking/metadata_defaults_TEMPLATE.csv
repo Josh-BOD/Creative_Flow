@@ -11,19 +11,22 @@
 # - folder_path: Name of the folder in source_files/ (e.g., "Hentai", "My Anime Folder")
 # - category_name: The canonical category name to use in output (e.g., "Hentai", "Anime")
 #                  Use this to standardize categories even if folder names vary
+# - model_sex: M=Male, F=Female, T=Trans, MFT=All
+# - style: Anime, Real, or Both
 # - creator_name: Who created these assets (e.g., "Seras", "Pedro", "Maria")
 # - language: Language code (e.g., "EN", "ES", "FR", "JP")
 # - content_type: SFW or NSFW
 # - creative_description: Default name if filename doesn't have one (e.g., "Generic", "Special")
+# - test_id: Optional test identifier (e.g., 001, 002, leave blank if not used)
 #
 # EXAMPLE ENTRIES:
-# folder_path,category_name,creator_name,language,content_type,creative_description
-# Hentai,Hentai,Seras,EN,NSFW,Generic
-# Anime,Anime,Pedro,EN,SFW,Anime-Special
-# Solo-Female,Solo-Female,Maria,ES,NSFW,Solo
-# Rubbing Pussy w Masturbation,Female Masturbation,Seras,EN,NSFW,Generic
-# My Old Folder Name,Standardized Category,Alex,FR,NSFW,CC-Special
-# Lesbian,Lesbian,Jordan,EN,SFW,Couples
+# folder_path,category_name,model_sex,style,creator_name,language,content_type,creative_description,test_id
+# Hentai,Hentai,F,Anime,Seras,EN,NSFW,Generic,
+# Anime,Anime,F,Anime,Pedro,EN,SFW,Anime-Special,001
+# Solo-Female,Solo-Female,F,Both,Maria,ES,NSFW,Solo,
+# Rubbing Pussy w Masturbation,Female Masturbation,F,Real,Seras,EN,NSFW,Generic,002
+# My Old Folder Name,Standardized Category,MFT,Both,Alex,FR,NSFW,CC-Special,
+# Lesbian,Lesbian,F,Real,Jordan,EN,SFW,Couples,003
 #
 # TIPS:
 # - folder_path = actual folder name on disk

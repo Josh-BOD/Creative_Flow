@@ -69,9 +69,10 @@ class TJUploader:
             existing_ids = self._get_existing_creative_ids(page)
             logger.info(f"Found {len(existing_ids)} existing creatives on page before upload")
             
-            # Step 2: Click Native tab if this is a native creative
+            # Step 2: Navigate to the appropriate tab based on creative type
             step = 2
             if 'native' in creative_type.lower():
+                # Native creatives: Click Native tab
                 if not self._click_native_tab(page):
                     result['error'] = "Failed to click Native tab"
                     return result
@@ -87,10 +88,18 @@ class TJUploader:
                 elif 'native_image' in creative_type.lower():
                     self._take_screenshot(page, f"03_static_banner_selected", screenshot_dir)
                 step = 4
+            elif 'video' in creative_type.lower() or 'short_video' in creative_type.lower():
+                # Regular video creatives: Click In-Stream Video tab
+                if not self._click_in_stream_video_tab(page):
+                    result['error'] = "Failed to click In-Stream Video tab"
+                    return result
+                self._take_screenshot(page, f"02_in_stream_video_tab_clicked", screenshot_dir)
+                step = 3
             
             # Step N: Click Upload button
-            is_native = 'native' in creative_type.lower()
-            if not self._click_add_creative(page, is_native=is_native):
+            # Both native and in-stream video use the same "Upload New Creatives" button (id="newImage")
+            use_new_creatives_button = 'native' in creative_type.lower() or 'video' in creative_type.lower()
+            if not self._click_add_creative(page, is_native=use_new_creatives_button):
                 result['error'] = "Failed to click Upload button"
                 return result
             
@@ -307,6 +316,38 @@ class TJUploader:
             return True
         except Exception as e:
             logger.error(f"Navigation failed: {e}")
+            return False
+    
+    def _click_in_stream_video_tab(self, page: Page) -> bool:
+        """Click the In-Stream Video tab in Media Library."""
+        try:
+            logger.info("Clicking In-Stream Video tab...")
+            
+            # Try multiple selectors for the In-Stream Video tab
+            selectors = [
+                'a#in_stream_video_tab',
+                'a[href="#in_stream_video"]',
+                'a.tab:has-text("In-Stream Video")',
+                'text=In-Stream Video'
+            ]
+            
+            for selector in selectors:
+                try:
+                    tab = page.locator(selector).first
+                    if tab.is_visible(timeout=2000):
+                        logger.info(f"Found In-Stream Video tab with selector: {selector}")
+                        tab.click()
+                        time.sleep(2)  # Wait for tab content to load (DataTable reload)
+                        logger.info("✓ Clicked In-Stream Video tab")
+                        return True
+                except Exception as e:
+                    continue
+            
+            logger.error("Could not find In-Stream Video tab with any selector")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error clicking In-Stream Video tab: {e}")
             return False
     
     def _click_native_tab(self, page: Page) -> bool:
@@ -587,11 +628,11 @@ class TJUploader:
         Returns:
             True if all uploads completed, False if timeout
         """
-        max_wait_time = expected_count * 30  # 30 seconds per file (more conservative)
+        max_wait_time = expected_count * 200  # 200 seconds per file (for very large In-Stream videos)
         poll_interval = 2  # Check every 2 seconds
         elapsed = 0
         
-        logger.info(f"Waiting for {expected_count} files to complete processing...")
+        logger.info(f"Waiting for {expected_count} files to complete processing (timeout: {max_wait_time}s = {max_wait_time/60:.1f} minutes)...")
         
         while elapsed < max_wait_time:
             try:
@@ -618,16 +659,32 @@ class TJUploader:
                 completed_files = page.locator('div.dz-preview.dz-success.dz-complete')
                 completed_count = completed_files.count()
                 
+                # Check how many are in error state
+                error_files = page.locator('div.dz-preview.dz-error')
+                error_count = error_files.count()
+                
                 # Check how many are still processing
                 processing_files = page.locator('div.dz-preview.dz-processing')
                 processing_count = processing_files.count()
                 
-                logger.info(f"  [{elapsed}s] Status: {completed_count}/{expected_count} complete, {processing_count} processing")
+                logger.info(f"  [{elapsed}s] Status: {completed_count}/{expected_count} complete, {processing_count} processing, {error_count} errors")
                 
-                # All expected files are complete
-                if completed_count >= expected_count:
-                    logger.info(f"✓ All {expected_count} uploads completed successfully! (took {elapsed}s)")
-                    self._take_screenshot(page, f"{step:02d}_all_uploads_complete", screenshot_dir)
+                # If we have errors, log them
+                if error_count > 0:
+                    for i in range(error_count):
+                        error_file = error_files.nth(i)
+                        error_msg_elem = error_file.locator('div.dz-error-message')
+                        if error_msg_elem.count() > 0:
+                            error_text = error_msg_elem.first.text_content()
+                            logger.error(f"  Upload error: {error_text}")
+                
+                # All expected files are complete OR accounted for (complete + errors)
+                if completed_count + error_count >= expected_count:
+                    if error_count > 0:
+                        logger.warning(f"⚠ Uploads finished with {error_count} error(s) and {completed_count} success(es) (took {elapsed}s)")
+                    else:
+                        logger.info(f"✓ All {expected_count} uploads completed successfully! (took {elapsed}s)")
+                    self._take_screenshot(page, f"{step:02d}_uploads_complete", screenshot_dir)
                     logger.info("Waiting 5 seconds for extra safety buffer...")
                     time.sleep(5)  # Extra 5 seconds safety buffer
                     return True
