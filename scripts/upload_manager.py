@@ -66,8 +66,15 @@ class UploadManager:
         self.session_csv = self.tracking_dir / "creative_inventory_session.csv"
         self.master_csv = self.tracking_dir / "creative_inventory.csv"
         
+        # TJ Creative Library cache (for fast duplicate detection)
+        self.tj_library_csv = self.tracking_dir / "TJ_Creative_Library.csv"
+        self.tj_library_cache = {}  # filename -> creative_id mapping
+        
         # Logger
         self.logger = self._setup_logger()
+        
+        # Load TJ Creative Library cache
+        self._load_tj_library_cache()
         
         # Upload status tracking
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -76,6 +83,89 @@ class UploadManager:
         
         # Batch tracking
         self.batch_id = self._get_next_batch_id()
+    
+    def _load_tj_library_cache(self):
+        """
+        Load TJ Creative Library cache from CSV for fast duplicate detection.
+        
+        This cache maps filenames to Creative IDs that already exist on TJ.
+        Much faster than scraping pagination every time.
+        """
+        try:
+            if not self.tj_library_csv.exists():
+                self.logger.info("TJ Creative Library cache not found (will be created on first upload)")
+                return
+            
+            import pandas as pd
+            df = pd.read_csv(self.tj_library_csv)
+            
+            # Build filename -> creative_id mapping
+            for _, row in df.iterrows():
+                filename = row.get('filename')
+                creative_id = row.get('creative_id')
+                if filename and creative_id:
+                    self.tj_library_cache[filename] = str(creative_id)
+            
+            self.logger.info(f"✓ Loaded {len(self.tj_library_cache)} Creative IDs from TJ Library cache")
+            
+        except Exception as e:
+            self.logger.warning(f"Could not load TJ Library cache: {e}")
+            self.tj_library_cache = {}
+    
+    def _check_tj_library_duplicate(self, filename: str) -> Optional[str]:
+        """
+        Check if filename already exists in TJ Creative Library.
+        
+        Args:
+            filename: Name of file to check
+            
+        Returns:
+            Creative ID if exists, None if not found
+        """
+        return self.tj_library_cache.get(filename)
+    
+    def _update_tj_library_cache(self, filename: str, creative_id: str, file_type: str = '', 
+                                  creative_type: str = '', dimensions: str = ''):
+        """
+        Add a new Creative ID to the TJ Library cache.
+        
+        Args:
+            filename: Name of the uploaded file
+            creative_id: The Creative ID from TJ
+            file_type: File extension (e.g., 'mp4', 'png')
+            creative_type: Type of creative (e.g., 'native_video')
+            dimensions: Dimensions (e.g., '640x360')
+        """
+        try:
+            import pandas as pd
+            
+            # Add to in-memory cache
+            self.tj_library_cache[filename] = creative_id
+            
+            # Append to CSV file
+            new_row = {
+                'creative_id': creative_id,
+                'filename': filename,
+                'upload_date': datetime.now().strftime('%Y-%m-%d'),
+                'dimensions': dimensions,
+                'file_type': file_type,
+                'creative_type': creative_type,
+                'review_status': 'pending'
+            }
+            
+            # If CSV doesn't exist, create with header
+            if not self.tj_library_csv.exists():
+                df = pd.DataFrame([new_row])
+                df.to_csv(self.tj_library_csv, index=False)
+            else:
+                # Append to existing CSV
+                df = pd.DataFrame([new_row])
+                df.to_csv(self.tj_library_csv, mode='a', header=False, index=False)
+            
+            self.logger.debug(f"Added to TJ Library cache: {filename} → {creative_id}")
+            
+        except Exception as e:
+            self.logger.warning(f"Could not update TJ Library cache: {e}")
     
     def _get_next_batch_id(self) -> str:
         """
@@ -570,13 +660,24 @@ class UploadManager:
                                 self._save_upload_result(file_record, 'skipped', error=error)
                                 continue
                             
-                            # Check for duplicate
+                            # Check for duplicate in master CSV
                             if not self.config.get('force') and file_record.get('tj_creative_id'):
                                 self.logger.info(f"Skipping {file_record.get('new_filename')}: Already uploaded (ID: {file_record.get('tj_creative_id')})")
                                 summary['skipped'] += 1
                                 self._save_upload_result(file_record, 'skipped',
                                                         creative_id=file_record.get('tj_creative_id'),
                                                         error='Already uploaded (use --force to re-upload)')
+                                continue
+                            
+                            # Check for duplicate in TJ Library cache (fast local check)
+                            filename = file_record.get('new_filename')
+                            cached_id = self._check_tj_library_duplicate(filename)
+                            if not self.config.get('force') and cached_id:
+                                self.logger.info(f"Skipping {filename}: Already exists on TJ (ID: {cached_id} from cache)")
+                                summary['skipped'] += 1
+                                self._save_upload_result(file_record, 'skipped',
+                                                        creative_id=cached_id,
+                                                        error='Already exists on TJ (from library cache)')
                                 continue
                             
                             # File is valid and should be uploaded
@@ -624,6 +725,13 @@ class UploadManager:
                                     self.logger.info(f"  [{i+1}] {file_record.get('new_filename')} → {creative_id}")
                                     summary['successful'] += 1
                                     self._save_upload_result(file_record, 'success', creative_id=creative_id)
+                                    
+                                    # Update TJ Library cache with new Creative ID
+                                    filename = file_record.get('new_filename')
+                                    file_type = file_record.get('file_type', '')
+                                    creative_type = file_record.get('creative_type', '')
+                                    dimensions = file_record.get('dimensions', '')
+                                    self._update_tj_library_cache(filename, creative_id, file_type, creative_type, dimensions)
                                 
                                 # Handle files without IDs (shouldn't happen, but just in case)
                                 if len(creative_ids) < len(valid_files):
