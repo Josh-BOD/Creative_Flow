@@ -223,6 +223,63 @@ Install dependencies: `pip install -r requirements.txt`
 - Check `metadata_defaults.csv` for correct folder paths
 - Folder names must match exactly (case-sensitive)
 
+## Upload System (NEW!)
+
+The Creative Flow system now includes an **automated upload module** for uploading processed creatives to advertising platforms!
+
+### Features
+- 🚀 **Automated Upload**: Upload creatives to TrafficJunky with browser automation
+- 🔐 **Secure Authentication**: Manual login with reCAPTCHA handling + session persistence
+- 🆔 **Creative ID Extraction**: Automatically extracts and tracks platform Creative IDs
+- 📊 **CSV Tracking**: Maintains upload status and links Creative IDs to inventory
+- 🧪 **Dry-Run Mode**: Test uploads safely without actually uploading
+- 📸 **Screenshot Capture**: Visual verification of each upload step
+
+### Quick Start
+
+```bash
+# 1. Install upload dependencies
+./setup_upload.sh
+
+# 2. Configure credentials
+cp config/env_template.txt config/.env
+# Edit config/.env with your TJ username/password
+
+# 3. Test with dry-run
+python3 scripts/upload_manager.py --session --verbose
+
+# 4. Live upload
+python3 scripts/upload_manager.py --session --live
+```
+
+### Documentation
+- **Setup Guide**: `UPLOAD_SETUP.md` - Complete setup instructions
+- **Implementation Plan**: `TODO/plan3.md` - Full technical specification
+- **Phase 1 Summary**: `PHASE1_COMPLETE.md` - What's working now
+
+### Command Examples
+
+```bash
+# Upload from session CSV (dry-run)
+python3 scripts/upload_manager.py --session
+
+# Upload with live mode
+python3 scripts/upload_manager.py --session --live
+
+# Headless mode (no browser window)
+python3 scripts/upload_manager.py --session --headless
+
+# Force re-upload even if Creative ID exists
+python3 scripts/upload_manager.py --session --force
+
+# Verbose logging
+python3 scripts/upload_manager.py --session --verbose
+```
+
+**Status**: Phase 1 complete! Authentication, file validation, and upload infrastructure working. Actual upload loop coming in Phase 2.
+
+---
+
 ## Future Enhancements (V2)
 
 - Direct Google Sheets integration

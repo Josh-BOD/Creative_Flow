@@ -72,8 +72,19 @@ Temporary Items
 
 # Logs
 *.log
+tracking/*_log_*.txt
+tracking/upload_log_*.txt
 
 # Environment variables
 .env
 .env.local
+
+# Upload System (sensitive data)
+config/.env
+config/config.py
+data/session/
+screenshots/
+archive/
+tracking/creative_inventory_session.csv
+tracking/upload_status_*.csv
 

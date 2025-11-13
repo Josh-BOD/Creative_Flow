@@ -1,0 +1,22 @@
+# Creative Flow Upload System - Environment Configuration
+# Copy this file to .env and fill in your credentials
+# DO NOT commit .env to git (it's already in .gitignore)
+
+# TrafficJunky Credentials
+TJ_USERNAME=your_username_here
+TJ_PASSWORD=your_password_here
+
+# Upload Settings
+DRY_RUN=True
+HEADLESS_MODE=False
+TAKE_SCREENSHOTS=True
+
+# Browser Settings
+TIMEOUT=30000
+SLOW_MO=100
+
+# Logging
+LOG_LEVEL=INFO
+LOG_TO_CONSOLE=True
+LOG_TO_FILE=True
+

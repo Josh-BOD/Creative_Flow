@@ -1,0 +1,7 @@
+# Ignore actual .env file with credentials
+.env
+
+# Ignore any other config files that might contain sensitive data
+*.local
+*.secret
+
