@@ -247,110 +247,162 @@ class UploadManager:
                 page.goto('https://advertiser.trafficjunky.com/media-library', wait_until='networkidle')
                 time.sleep(1)
                 
-                # Scrape all pages
                 all_creatives = []
-                current_page = 1
-                max_pages = 100  # Safety limit
                 
-                while current_page <= max_pages:
-                    self.logger.info(f"Scraping page {current_page}...")
-                    time.sleep(0.5)
+                # Scrape from ALL tabs: Regular, Native Static Banner, Native Rollover
+                tabs_to_scrape = [
+                    {'name': 'Regular Creatives', 'tab': None, 'subtab': None},
+                    {'name': 'Native Static Banner', 'tab': 'native', 'subtab': 'static'},
+                    {'name': 'Native Rollover', 'tab': 'native', 'subtab': 'rollover'}
+                ]
+                
+                for tab_config in tabs_to_scrape:
+                    tab_name = tab_config['name']
+                    self.logger.info(f"\n{'='*60}")
+                    self.logger.info(f"Scraping: {tab_name}")
+                    self.logger.info(f"{'='*60}")
                     
-                    # Get all creative containers on current page
-                    containers = page.locator('div.creativeContainer[data-id]')
-                    count = containers.count()
-                    
-                    if count == 0 and current_page == 1:
-                        self.logger.info("Media Library is empty")
-                        break
-                    
-                    # Extract data from each creative
-                    for i in range(count):
+                    # Click appropriate tab/subtab
+                    if tab_config['tab'] == 'native':
+                        # Click Native tab
                         try:
-                            container = containers.nth(i)
+                            native_tab = page.locator('a#native_tab').first
+                            if native_tab.count() > 0:
+                                native_tab.click()
+                                time.sleep(1)
+                                self.logger.info("✓ Clicked Native tab")
                             
-                            # Get Creative ID from data-id attribute
-                            creative_id = container.get_attribute('data-id')
-                            if not creative_id:
-                                continue
+                            # Click subtab (Static Banner or Rollover)
+                            if tab_config['subtab'] == 'static':
+                                static_btn = page.locator('label:has(input#native_static)').first
+                                if static_btn.count() > 0:
+                                    static_btn.click()
+                                    time.sleep(2)  # Wait for DataTable to reload
+                                    self.logger.info("✓ Clicked Static Banner sub-tab")
+                            elif tab_config['subtab'] == 'rollover':
+                                rollover_btn = page.locator('label:has(input#native_rollover)').first
+                                if rollover_btn.count() > 0:
+                                    rollover_btn.click()
+                                    time.sleep(2)  # Wait for DataTable to reload
+                                    self.logger.info("✓ Clicked Rollover sub-tab")
                             
-                            # Get filename from label.creativeName
-                            name_label = container.locator('label.creativeName').first
-                            filename = name_label.text_content() if name_label.count() > 0 else ''
+                            # Wait for DataTable to finish loading
+                            try:
+                                page.wait_for_selector('div.creativeContainer[data-id]', state='visible', timeout=5000)
+                            except:
+                                pass
                             
-                            # Get dimensions
-                            dimensions_span = container.locator('span.dimensions').first
-                            dimensions = dimensions_span.text_content() if dimensions_span.count() > 0 else ''
-                            
-                            # Get file type
-                            file_type_span = container.locator('span.fileType').first
-                            file_type = file_type_span.text_content() if file_type_span.count() > 0 else ''
-                            file_type = file_type.replace('.', '').strip()  # Remove leading dot
-                            
-                            # Get review status
-                            review_span = container.locator('span.reviewStatus').first
-                            review_status = review_span.get_attribute('data-review-status') if review_span.count() > 0 else 'unknown'
-                            
-                            if filename and creative_id:
-                                all_creatives.append({
-                                    'creative_id': creative_id.strip(),
-                                    'filename': filename.strip(),
-                                    'upload_date': datetime.now().strftime('%Y-%m-%d'),
-                                    'dimensions': dimensions.strip(),
-                                    'file_type': file_type,
-                                    'creative_type': '',  # Can't determine from TJ UI
-                                    'review_status': review_status
-                                })
-                        
                         except Exception as e:
-                            self.logger.debug(f"Error extracting creative at index {i}: {e}")
-                    
-                    self.logger.info(f"  Page {current_page}: Found {count} creatives")
-                    summary['pages_scraped'] = current_page
-                    
-                    # Check for "Next" button
-                    next_button_selectors = [
-                        'a.page-link:has-text("Next")',
-                        'button:has-text("Next")',
-                        'a[rel="next"]',
-                        'li.next:not(.disabled) a',
-                        'a.pagination-next',
-                        '.pagination .next a'
-                    ]
-                    
-                    next_button = None
-                    for selector in next_button_selectors:
-                        try:
-                            btn = page.locator(selector).first
-                            if btn.count() > 0 and btn.is_visible(timeout=1000):
-                                # Check if button is not disabled
-                                is_disabled = False
-                                try:
-                                    parent = btn.locator('xpath=..').first
-                                    if parent.get_attribute('class') and 'disabled' in parent.get_attribute('class'):
-                                        is_disabled = True
-                                except:
-                                    pass
-                                
-                                if not is_disabled:
-                                    next_button = btn
-                                    break
-                        except:
+                            self.logger.warning(f"Could not navigate to {tab_name}: {e}")
                             continue
                     
-                    # If no next button, we're done
-                    if not next_button:
-                        self.logger.info(f"  No more pages (reached page {current_page})")
-                        break
+                    # Scrape all pages for this tab
+                    current_page = 1
+                    max_pages = 100  # Safety limit
+                    tab_creatives_count = 0
                     
-                    # Click next page
-                    try:
-                        next_button.click()
-                        time.sleep(1.5)  # Wait for page to load
-                        current_page += 1
-                    except Exception as e:
-                        self.logger.debug(f"Could not click next button: {e}")
-                        break
+                    while current_page <= max_pages:
+                        self.logger.info(f"  Scraping page {current_page}...")
+                        time.sleep(0.5)
+                        
+                        # Get all creative containers on current page
+                        containers = page.locator('div.creativeContainer[data-id]')
+                        count = containers.count()
+                        
+                        if count == 0 and current_page == 1:
+                            self.logger.info(f"  {tab_name} is empty")
+                            break
+                    
+                        # Extract data from each creative
+                        for i in range(count):
+                            try:
+                                container = containers.nth(i)
+                                
+                                # Get Creative ID from data-id attribute
+                                creative_id = container.get_attribute('data-id')
+                                if not creative_id:
+                                    continue
+                                
+                                # Get filename from label.creativeName
+                                name_label = container.locator('label.creativeName').first
+                                filename = name_label.text_content() if name_label.count() > 0 else ''
+                                
+                                # Get dimensions
+                                dimensions_span = container.locator('span.dimensions').first
+                                dimensions = dimensions_span.text_content() if dimensions_span.count() > 0 else ''
+                                
+                                # Get file type
+                                file_type_span = container.locator('span.fileType').first
+                                file_type = file_type_span.text_content() if file_type_span.count() > 0 else ''
+                                file_type = file_type.replace('.', '').strip()  # Remove leading dot
+                                
+                                # Get review status
+                                review_span = container.locator('span.reviewStatus').first
+                                review_status = review_span.get_attribute('data-review-status') if review_span.count() > 0 else 'unknown'
+                                
+                                if filename and creative_id:
+                                    all_creatives.append({
+                                        'creative_id': creative_id.strip(),
+                                        'filename': filename.strip(),
+                                        'upload_date': datetime.now().strftime('%Y-%m-%d'),
+                                        'dimensions': dimensions.strip(),
+                                        'file_type': file_type,
+                                        'creative_type': tab_name,  # Track which tab it came from
+                                        'review_status': review_status
+                                    })
+                                    tab_creatives_count += 1
+                            
+                            except Exception as e:
+                                self.logger.debug(f"Error extracting creative at index {i}: {e}")
+                        
+                        self.logger.info(f"    Page {current_page}: Found {count} creatives")
+                        
+                        # Check for "Next" button
+                        next_button_selectors = [
+                            'a.page-link:has-text("Next")',
+                            'button:has-text("Next")',
+                            'a[rel="next"]',
+                            'li.next:not(.disabled) a',
+                            'a.pagination-next',
+                            '.pagination .next a'
+                        ]
+                        
+                        next_button = None
+                        for selector in next_button_selectors:
+                            try:
+                                btn = page.locator(selector).first
+                                if btn.count() > 0 and btn.is_visible(timeout=1000):
+                                    # Check if button is not disabled
+                                    is_disabled = False
+                                    try:
+                                        parent = btn.locator('xpath=..').first
+                                        if parent.get_attribute('class') and 'disabled' in parent.get_attribute('class'):
+                                            is_disabled = True
+                                    except:
+                                        pass
+                                    
+                                    if not is_disabled:
+                                        next_button = btn
+                                        break
+                            except:
+                                continue
+                        
+                        # If no next button, we're done with this tab
+                        if not next_button:
+                            self.logger.info(f"    No more pages for {tab_name}")
+                            break
+                        
+                        # Click next page
+                        try:
+                            next_button.click()
+                            time.sleep(1.5)  # Wait for page to load
+                            current_page += 1
+                        except Exception as e:
+                            self.logger.debug(f"Could not click next button: {e}")
+                            break
+                    
+                    # Summary for this tab
+                    self.logger.info(f"✓ {tab_name}: Scraped {tab_creatives_count} creatives from {current_page} pages")
                 
                 browser.close()
                 
@@ -371,8 +423,8 @@ class UploadManager:
                     summary['total_scraped'] = len(df)
                     summary['cache_updated'] = True
                     
-                    self.logger.info("=" * 60)
-                    self.logger.info(f"✓ Scraped {len(df)} Creative IDs from {current_page} pages")
+                    self.logger.info("\n" + "=" * 60)
+                    self.logger.info(f"✓ Total: Scraped {len(df)} Creative IDs from ALL tabs")
                     self.logger.info(f"✓ TJ Creative Library cache updated: {self.tj_library_csv}")
                     self.logger.info("=" * 60)
                 else:
