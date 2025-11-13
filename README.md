@@ -235,9 +235,11 @@ The Creative Flow system now includes an **automated upload module** for uploadi
 - 🚀 **Automated Upload**: Upload creatives to TrafficJunky with browser automation
 - 🔐 **Secure Authentication**: Manual login with reCAPTCHA handling + session persistence
 - 🆔 **Creative ID Extraction**: Automatically extracts and tracks platform Creative IDs
+- ✅ **Duplicate Detection**: Validates Creative IDs to prevent storing incorrect data from duplicate uploads
 - 📊 **CSV Tracking**: Maintains upload status and links Creative IDs to inventory
 - 🧪 **Dry-Run Mode**: Test uploads safely without actually uploading
 - 📸 **Screenshot Capture**: Visual verification of each upload step
+- 🔄 **Batch Upload**: Upload multiple creatives at once (grouped by type)
 
 ### Quick Start
 
@@ -258,6 +260,7 @@ python3 scripts/upload_manager.py --session --live
 
 ### Documentation
 - **Setup Guide**: `UPLOAD_SETUP.md` - Complete setup instructions
+- **Duplicate Detection**: `DUPLICATE_DETECTION.md` - How Creative ID validation works
 - **Implementation Plan**: `TODO/plan3.md` - Full technical specification
 - **Phase 1 Summary**: `PHASE1_COMPLETE.md` - What's working now
 
