@@ -249,9 +249,11 @@ class UploadManager:
                 
                 all_creatives = []
                 
-                # Scrape from ALL tabs: Regular, Native Static Banner, Native Rollover
+                # Scrape from ALL tabs: Static Banner, Video, In-Stream, Native Static, Native Rollover
                 tabs_to_scrape = [
-                    {'name': 'Regular Creatives', 'tab': None, 'subtab': None},
+                    {'name': 'Static Banner', 'tab': 'static', 'subtab': None},
+                    {'name': 'Video Banners', 'tab': 'video', 'subtab': None},
+                    {'name': 'In-Stream Video', 'tab': 'instream', 'subtab': None},
                     {'name': 'Native Static Banner', 'tab': 'native', 'subtab': 'static'},
                     {'name': 'Native Rollover', 'tab': 'native', 'subtab': 'rollover'}
                 ]
@@ -263,9 +265,33 @@ class UploadManager:
                     self.logger.info(f"{'='*60}")
                     
                     # Click appropriate tab/subtab
-                    if tab_config['tab'] == 'native':
-                        # Click Native tab
-                        try:
+                    try:
+                        if tab_config['tab'] == 'static':
+                            # Click Static Banner tab (main tab)
+                            static_tab = page.locator('a#static_tab, a[href="#static"], a.tab:has-text("Static Banner")').first
+                            if static_tab.count() > 0:
+                                static_tab.click()
+                                time.sleep(2)
+                                self.logger.info("✓ Clicked Static Banner tab")
+                        
+                        elif tab_config['tab'] == 'video':
+                            # Click Video Banners tab
+                            video_tab = page.locator('a#video_tab, a[href="#video"], a.tab:has-text("Video")').first
+                            if video_tab.count() > 0:
+                                video_tab.click()
+                                time.sleep(2)
+                                self.logger.info("✓ Clicked Video Banners tab")
+                        
+                        elif tab_config['tab'] == 'instream':
+                            # Click In-Stream Video tab
+                            instream_tab = page.locator('a#instream_tab, a[href="#instream"], a.tab:has-text("In-Stream")').first
+                            if instream_tab.count() > 0:
+                                instream_tab.click()
+                                time.sleep(2)
+                                self.logger.info("✓ Clicked In-Stream Video tab")
+                        
+                        elif tab_config['tab'] == 'native':
+                            # Click Native tab
                             native_tab = page.locator('a#native_tab').first
                             if native_tab.count() > 0:
                                 native_tab.click()
@@ -285,16 +311,16 @@ class UploadManager:
                                     rollover_btn.click()
                                     time.sleep(2)  # Wait for DataTable to reload
                                     self.logger.info("✓ Clicked Rollover sub-tab")
-                            
-                            # Wait for DataTable to finish loading
-                            try:
-                                page.wait_for_selector('div.creativeContainer[data-id]', state='visible', timeout=5000)
-                            except:
-                                pass
-                            
-                        except Exception as e:
-                            self.logger.warning(f"Could not navigate to {tab_name}: {e}")
-                            continue
+                        
+                        # Wait for DataTable to finish loading
+                        try:
+                            page.wait_for_selector('div.creativeContainer[data-id]', state='visible', timeout=5000)
+                        except:
+                            pass
+                        
+                    except Exception as e:
+                        self.logger.warning(f"Could not navigate to {tab_name}: {e}")
+                        continue
                     
                     # Scrape all pages for this tab
                     current_page = 1
