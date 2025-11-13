@@ -627,6 +627,17 @@ class UploadManager:
                             summary['results'].append(upload_result)
                             break
                             
+                        elif upload_result['status'] == 'duplicate':
+                            # Files already exist on TJ (no new Creative IDs created)
+                            self.logger.warning(f"\n⚠ No new Creative IDs - files may already exist on TJ:")
+                            for file_record in valid_files:
+                                self.logger.warning(f"  - {file_record.get('new_filename')} (duplicate or already uploaded)")
+                                summary['skipped'] += 1
+                                self._save_upload_result(file_record, 'duplicate',
+                                                        error='File already exists on TJ (no new Creative ID)')
+                            summary['results'].append(upload_result)
+                            break
+                            
                         elif upload_result['status'] == 'dry_run_success':
                             self.logger.info(f"✓ Dry-run successful for batch (no actual upload)")
                             for file_record in valid_files:

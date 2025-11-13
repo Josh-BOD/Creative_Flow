@@ -65,6 +65,10 @@ class TJUploader:
             
             self._take_screenshot(page, f"01_media_library", screenshot_dir)
             
+            # Step 1.5: Capture existing Creative IDs BEFORE upload (for duplicate detection)
+            existing_ids = self._get_existing_creative_ids(page)
+            logger.info(f"Found {len(existing_ids)} existing creatives on page before upload")
+            
             # Step 2: Click Native tab if this is a native creative
             step = 2
             if 'native' in creative_type.lower():
@@ -121,19 +125,21 @@ class TJUploader:
             
             step += 1
             
-            # Extract Creative IDs (multiple)
-            creative_ids = self._extract_creative_ids_batch(page, len(file_paths))
+            # Extract Creative IDs (multiple) - only NEW ones created during this upload
+            uploaded_file_names = [fp.name for fp in file_paths]
+            creative_ids = self._extract_new_creative_ids(page, uploaded_file_names, existing_ids)
             
             if creative_ids:
-                logger.info(f"✓ Successfully uploaded {len(creative_ids)} creatives")
+                logger.info(f"✓ Successfully uploaded {len(creative_ids)} NEW creatives")
                 result['status'] = 'success'
                 result['creative_ids'] = creative_ids
                 result['uploaded_count'] = len(creative_ids)
                 self._take_screenshot(page, f"{step:02d}_success_batch", screenshot_dir)
             else:
-                logger.warning("Upload may have succeeded but could not extract Creative IDs")
-                result['error'] = "Could not extract Creative IDs"
-                self._take_screenshot(page, f"{step:02d}_ERROR_no_ids", screenshot_dir)
+                logger.warning("⚠ No new Creative IDs found - files may already exist on TJ")
+                result['error'] = "No new Creative IDs (possible duplicates)"
+                result['status'] = 'duplicate'  # New status for duplicates
+                self._take_screenshot(page, f"{step:02d}_WARNING_no_new_ids", screenshot_dir)
             
             return result
             
@@ -695,50 +701,148 @@ class TJUploader:
             
             return None
     
-    def _extract_creative_ids_batch(self, page: Page, expected_count: int) -> List[str]:
+    def _get_existing_creative_ids(self, page: Page) -> set:
         """
-        Extract multiple Creative IDs from page after batch upload.
+        Get all existing Creative IDs currently visible on the page.
+        This is used to detect which IDs are NEW after upload.
+        
+        Uses the data-id attribute from .creativeContainer elements:
+        <div class="creativeContainer" data-id="1032530511">
+        
+        Returns:
+            Set of existing Creative ID strings
+        """
+        try:
+            # Wait a moment for page to be stable
+            time.sleep(0.5)
+            
+            # Get all creative containers
+            containers = page.locator('div.creativeContainer[data-id]')
+            count = containers.count()
+            
+            existing_ids = set()
+            for i in range(count):
+                try:
+                    container = containers.nth(i)
+                    creative_id = container.get_attribute('data-id')
+                    if creative_id:
+                        existing_ids.add(creative_id.strip())
+                except Exception as e:
+                    logger.debug(f"Failed to get data-id at index {i}: {e}")
+            
+            logger.debug(f"Captured {len(existing_ids)} existing Creative IDs")
+            return existing_ids
+            
+        except Exception as e:
+            logger.debug(f"Error getting existing IDs: {e}")
+            return set()
+    
+    def _extract_new_creative_ids(
+        self, 
+        page: Page, 
+        uploaded_file_names: List[str], 
+        existing_ids: set
+    ) -> List[str]:
+        """
+        Extract only NEW Creative IDs that were created during this upload.
+        
+        Strategy:
+        1. Get all current Creative IDs from .creativeContainer[data-id]
+        2. Compare with existing_ids (captured before upload) to find NEW ids
+        3. For each new ID, get its filename from .creativeName label
+        4. Match filename with our uploaded_file_names list
+        5. Return Creative IDs in the same order as uploaded_file_names
         
         Args:
             page: Playwright page object
-            expected_count: Number of files uploaded (to know how many IDs to expect)
+            uploaded_file_names: List of filenames we just uploaded
+            existing_ids: Set of Creative IDs that existed before upload
             
         Returns:
-            List of Creative ID strings
+            List of NEW Creative ID strings, in same order as uploaded_file_names
         """
         try:
-            logger.info(f"Extracting {expected_count} Creative IDs...")
+            logger.info(f"Extracting NEW Creative IDs (excluding {len(existing_ids)} existing)...")
             
-            # Wait for bannerId spans to appear
-            page.wait_for_selector('span.bannerId', state='visible', timeout=15000)
+            # Wait for creative containers to appear/update
+            page.wait_for_selector('div.creativeContainer[data-id]', state='visible', timeout=15000)
+            time.sleep(1)  # Extra buffer for DOM to stabilize
             
-            # Get all bannerId elements
-            banner_id_elements = page.locator('span.bannerId')
-            count = banner_id_elements.count()
+            # Get all creative containers
+            containers = page.locator('div.creativeContainer[data-id]')
+            count = containers.count()
             
-            logger.info(f"Found {count} bannerId elements on page")
+            logger.info(f"Found {count} total creatives on page after upload")
             
-            creative_ids = []
-            for i in range(min(count, expected_count)):
+            # Build map: filename -> Creative ID (only for NEW creatives)
+            filename_to_id = {}
+            new_ids_found = []
+            
+            for i in range(count):
                 try:
-                    element = banner_id_elements.nth(i)
-                    creative_id = element.text_content()
-                    if creative_id and creative_id.strip():
-                        creative_id = creative_id.strip()
-                        creative_ids.append(creative_id)
-                        logger.info(f"  [{i+1}] Creative ID: {creative_id}")
+                    container = containers.nth(i)
+                    creative_id = container.get_attribute('data-id')
+                    
+                    if not creative_id:
+                        continue
+                    
+                    creative_id = creative_id.strip()
+                    
+                    # Check if this is a NEW ID (not in existing_ids)
+                    if creative_id in existing_ids:
+                        logger.debug(f"  Skipping existing ID: {creative_id}")
+                        continue
+                    
+                    # This is a new ID! Get its filename
+                    # Look for .creativeName label within this container
+                    name_label = container.locator('label.creativeName').first
+                    if name_label.count() > 0:
+                        filename = name_label.text_content()
+                        if filename:
+                            filename = filename.strip()
+                            # Remove file extension for matching
+                            filename_base = filename
+                            
+                            # Map this filename to Creative ID
+                            filename_to_id[filename] = creative_id
+                            new_ids_found.append(creative_id)
+                            logger.info(f"  ✓ NEW Creative: {filename} -> ID: {creative_id}")
+                    
                 except Exception as e:
-                    logger.warning(f"Failed to extract ID at index {i}: {e}")
+                    logger.warning(f"Failed to process container at index {i}: {e}")
             
-            if len(creative_ids) == expected_count:
-                logger.info(f"✓ Successfully extracted all {expected_count} Creative IDs")
-            else:
-                logger.warning(f"Expected {expected_count} IDs but extracted {len(creative_ids)}")
+            if not new_ids_found:
+                logger.warning("⚠ No new Creative IDs found - all files may be duplicates")
+                return []
             
-            return creative_ids
+            logger.info(f"Found {len(new_ids_found)} NEW Creative IDs")
+            
+            # Match uploaded files to Creative IDs (preserve order)
+            matched_ids = []
+            for uploaded_name in uploaded_file_names:
+                # Try exact match first
+                if uploaded_name in filename_to_id:
+                    matched_ids.append(filename_to_id[uploaded_name])
+                    logger.debug(f"  Matched: {uploaded_name} -> {filename_to_id[uploaded_name]}")
+                else:
+                    # Try without extension
+                    name_no_ext = uploaded_name.rsplit('.', 1)[0]
+                    if name_no_ext in filename_to_id:
+                        matched_ids.append(filename_to_id[name_no_ext])
+                        logger.debug(f"  Matched (no ext): {name_no_ext} -> {filename_to_id[name_no_ext]}")
+                    else:
+                        logger.warning(f"  ⚠ Could not match uploaded file: {uploaded_name}")
+            
+            if len(matched_ids) != len(uploaded_file_names):
+                logger.warning(
+                    f"Expected {len(uploaded_file_names)} matches but got {len(matched_ids)}. "
+                    f"Some files may be duplicates or failed to upload."
+                )
+            
+            return matched_ids
                 
         except Exception as e:
-            logger.warning(f"Could not extract Creative IDs: {e}")
+            logger.error(f"Could not extract new Creative IDs: {e}")
             return []
     
     def _take_screenshot(self, page: Page, name: str, screenshot_dir: Optional[Path]):
