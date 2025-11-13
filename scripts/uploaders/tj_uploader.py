@@ -703,39 +703,120 @@ class TJUploader:
     
     def _get_existing_creative_ids(self, page: Page) -> set:
         """
-        Get all existing Creative IDs currently visible on the page.
+        Get all existing Creative IDs from ALL pages (handles pagination).
         This is used to detect which IDs are NEW after upload.
+        
+        IMPORTANT: TJ Media Library shows 12 creatives per page with pagination.
+        We need to loop through ALL pages to capture every existing Creative ID,
+        otherwise we might think IDs from page 2+ are "new" when they're not.
         
         Uses the data-id attribute from .creativeContainer elements:
         <div class="creativeContainer" data-id="1032530511">
         
         Returns:
-            Set of existing Creative ID strings
+            Set of existing Creative ID strings from ALL pages
         """
         try:
-            # Wait a moment for page to be stable
-            time.sleep(0.5)
+            logger.info("Collecting existing Creative IDs from all pages...")
+            all_existing_ids = set()
+            current_page = 1
+            max_pages = 50  # Safety limit to prevent infinite loops
             
-            # Get all creative containers
-            containers = page.locator('div.creativeContainer[data-id]')
-            count = containers.count()
-            
-            existing_ids = set()
-            for i in range(count):
+            while current_page <= max_pages:
+                # Wait for page to be stable
+                time.sleep(0.5)
+                
+                # Get all creative containers on current page
+                containers = page.locator('div.creativeContainer[data-id]')
+                count = containers.count()
+                
+                if count == 0 and current_page == 1:
+                    # No creatives at all (empty library)
+                    logger.info("Media Library is empty (no existing creatives)")
+                    return set()
+                
+                # Collect IDs from current page
+                page_ids = []
+                for i in range(count):
+                    try:
+                        container = containers.nth(i)
+                        creative_id = container.get_attribute('data-id')
+                        if creative_id:
+                            creative_id = creative_id.strip()
+                            all_existing_ids.add(creative_id)
+                            page_ids.append(creative_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to get data-id at index {i}: {e}")
+                
+                logger.info(f"  Page {current_page}: Found {len(page_ids)} creatives")
+                
+                # Check if there's a "Next" button for pagination
+                # Common pagination selectors in TJ interface
+                next_button_selectors = [
+                    'a.page-link:has-text("Next")',
+                    'button:has-text("Next")',
+                    'a[rel="next"]',
+                    'li.next:not(.disabled) a',
+                    'a.pagination-next',
+                    '.pagination .next a'
+                ]
+                
+                next_button = None
+                for selector in next_button_selectors:
+                    try:
+                        btn = page.locator(selector).first
+                        if btn.count() > 0 and btn.is_visible(timeout=1000):
+                            # Check if button is not disabled
+                            is_disabled = False
+                            try:
+                                parent = btn.locator('xpath=..').first
+                                if parent.get_attribute('class') and 'disabled' in parent.get_attribute('class'):
+                                    is_disabled = True
+                            except:
+                                pass
+                            
+                            if not is_disabled:
+                                next_button = btn
+                                break
+                    except:
+                        continue
+                
+                # If no next button found, we're on the last page
+                if not next_button:
+                    logger.info(f"  No more pages (reached page {current_page})")
+                    break
+                
+                # Click next button to go to next page
                 try:
-                    container = containers.nth(i)
-                    creative_id = container.get_attribute('data-id')
-                    if creative_id:
-                        existing_ids.add(creative_id.strip())
+                    logger.debug(f"  Clicking next page...")
+                    next_button.click()
+                    time.sleep(1)  # Wait for page to load
+                    current_page += 1
                 except Exception as e:
-                    logger.debug(f"Failed to get data-id at index {i}: {e}")
+                    logger.debug(f"Could not click next button: {e}")
+                    break
             
-            logger.debug(f"Captured {len(existing_ids)} existing Creative IDs")
-            return existing_ids
+            logger.info(f"✓ Collected {len(all_existing_ids)} existing Creative IDs from {current_page} page(s)")
+            return all_existing_ids
             
         except Exception as e:
-            logger.debug(f"Error getting existing IDs: {e}")
-            return set()
+            logger.warning(f"Error getting existing IDs (falling back to current page only): {e}")
+            # Fallback: just get current page
+            try:
+                containers = page.locator('div.creativeContainer[data-id]')
+                count = containers.count()
+                existing_ids = set()
+                for i in range(count):
+                    try:
+                        container = containers.nth(i)
+                        creative_id = container.get_attribute('data-id')
+                        if creative_id:
+                            existing_ids.add(creative_id.strip())
+                    except:
+                        pass
+                return existing_ids
+            except:
+                return set()
     
     def _extract_new_creative_ids(
         self, 

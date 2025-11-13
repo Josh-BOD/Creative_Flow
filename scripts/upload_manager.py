@@ -532,6 +532,11 @@ class UploadManager:
                 # Define upload order
                 group_order = ['native_video', 'native_image', 'video', 'image']
                 
+                # IMPORTANT: Limit batch size to avoid pagination issues
+                # TJ Media Library shows 12 creatives per page, so uploading 10 at a time
+                # keeps us within a single page and simplifies duplicate detection
+                MAX_BATCH_SIZE = 10
+                
                 batch_number = 0
                 
                 # Process each group
@@ -541,122 +546,128 @@ class UploadManager:
                     if not group_files:
                         continue
                     
-                    batch_number += 1
-                    self.logger.info(f"\n{'='*60}")
-                    self.logger.info(f"BATCH {batch_number}: {group_name.upper()} ({len(group_files)} files)")
-                    self.logger.info(f"{'='*60}")
+                    # Split large groups into chunks of MAX_BATCH_SIZE
+                    total_files = len(group_files)
+                    chunks = [group_files[i:i + MAX_BATCH_SIZE] for i in range(0, total_files, MAX_BATCH_SIZE)]
                     
-                    # Validate files and filter duplicates
-                    valid_files = []
-                    valid_file_paths = []
-                    
-                    for file_record in group_files:
-                        # Validate file exists
-                        is_valid, error = self.validate_file(file_record)
-                        if not is_valid:
-                            self.logger.error(f"Skipping {file_record.get('new_filename')}: {error}")
-                            summary['skipped'] += 1
-                            self._save_upload_result(file_record, 'skipped', error=error)
+                    for chunk_idx, chunk_files in enumerate(chunks, 1):
+                        batch_number += 1
+                        chunk_info = f" (chunk {chunk_idx}/{len(chunks)})" if len(chunks) > 1 else ""
+                        self.logger.info(f"\n{'='*60}")
+                        self.logger.info(f"BATCH {batch_number}: {group_name.upper()} ({len(chunk_files)}/{total_files} files{chunk_info})")
+                        self.logger.info(f"{'='*60}")
+                        
+                        # Validate files and filter duplicates
+                        valid_files = []
+                        valid_file_paths = []
+                        
+                        for file_record in chunk_files:
+                            # Validate file exists
+                            is_valid, error = self.validate_file(file_record)
+                            if not is_valid:
+                                self.logger.error(f"Skipping {file_record.get('new_filename')}: {error}")
+                                summary['skipped'] += 1
+                                self._save_upload_result(file_record, 'skipped', error=error)
+                                continue
+                            
+                            # Check for duplicate
+                            if not self.config.get('force') and file_record.get('tj_creative_id'):
+                                self.logger.info(f"Skipping {file_record.get('new_filename')}: Already uploaded (ID: {file_record.get('tj_creative_id')})")
+                                summary['skipped'] += 1
+                                self._save_upload_result(file_record, 'skipped',
+                                                        creative_id=file_record.get('tj_creative_id'),
+                                                        error='Already uploaded (use --force to re-upload)')
+                                continue
+                            
+                            # File is valid and should be uploaded
+                            valid_files.append(file_record)
+                            valid_file_paths.append(self._get_file_path(file_record))
+                        
+                        if not valid_files:
+                            self.logger.info(f"No files to upload in this batch (all skipped)")
                             continue
                         
-                        # Check for duplicate
-                        if not self.config.get('force') and file_record.get('tj_creative_id'):
-                            self.logger.info(f"Skipping {file_record.get('new_filename')}: Already uploaded (ID: {file_record.get('tj_creative_id')})")
-                            summary['skipped'] += 1
-                            self._save_upload_result(file_record, 'skipped',
-                                                    creative_id=file_record.get('tj_creative_id'),
-                                                    error='Already uploaded (use --force to re-upload)')
-                            continue
+                        # Show files in this batch
+                        self.logger.info(f"Files in batch:")
+                        for i, f in enumerate(valid_files, 1):
+                            self.logger.info(f"  [{i}] {f.get('new_filename')}")
                         
-                        # File is valid and should be uploaded
-                        valid_files.append(file_record)
-                        valid_file_paths.append(self._get_file_path(file_record))
-                    
-                    if not valid_files:
-                        self.logger.info(f"No files to upload in this batch (all skipped)")
-                        continue
-                    
-                    # Show files in this batch
-                    self.logger.info(f"Files in batch:")
-                    for i, f in enumerate(valid_files, 1):
-                        self.logger.info(f"  [{i}] {f.get('new_filename')}")
-                    
-                    # Upload batch with retry logic
-                    max_retries = 3
-                    upload_result = None
-                    
-                    for attempt in range(max_retries):
-                        if attempt > 0:
-                            self.logger.info(f"\nRetry attempt {attempt}/{max_retries-1}")
-                            import time
-                            time.sleep(2)
+                        # Upload batch with retry logic
+                        max_retries = 3
+                        upload_result = None
                         
-                        # Create screenshot directory for this batch
-                        screenshot_dir = self.screenshot_dir / f"batch_{batch_number:02d}_{group_name}"
-                        
-                        # Perform batch upload
-                        upload_result = uploader.upload_creative_batch(
-                            page=page,
-                            file_paths=valid_file_paths,
-                            screenshot_dir=screenshot_dir,
-                            creative_type=group_name
-                        )
-                        
-                        # Check result
-                        if upload_result['status'] == 'success':
-                            # Match Creative IDs to files
-                            creative_ids = upload_result.get('creative_ids', [])
-                            self.logger.info(f"\n✓ Batch upload successful! {len(creative_ids)} Creative IDs extracted")
+                        for attempt in range(max_retries):
+                            if attempt > 0:
+                                self.logger.info(f"\nRetry attempt {attempt}/{max_retries-1}")
+                                import time
+                                time.sleep(2)
                             
-                            # Save results for each file
-                            for i, (file_record, creative_id) in enumerate(zip(valid_files, creative_ids)):
-                                self.logger.info(f"  [{i+1}] {file_record.get('new_filename')} → {creative_id}")
-                                summary['successful'] += 1
-                                self._save_upload_result(file_record, 'success', creative_id=creative_id)
+                            # Create screenshot directory for this batch
+                            screenshot_dir = self.screenshot_dir / f"batch_{batch_number:02d}_{group_name}"
                             
-                            # Handle files without IDs (shouldn't happen, but just in case)
-                            if len(creative_ids) < len(valid_files):
-                                self.logger.warning(f"⚠ Only got {len(creative_ids)} IDs for {len(valid_files)} files")
-                                for i in range(len(creative_ids), len(valid_files)):
-                                    file_record = valid_files[i]
-                                    self.logger.warning(f"  No ID for: {file_record.get('new_filename')}")
-                                    summary['failed'] += 1
-                                    self._save_upload_result(file_record, 'failed',
-                                                            error='Creative ID not extracted')
+                            # Perform batch upload
+                            upload_result = uploader.upload_creative_batch(
+                                page=page,
+                                file_paths=valid_file_paths,
+                                screenshot_dir=screenshot_dir,
+                                creative_type=group_name
+                            )
                             
-                            summary['results'].append(upload_result)
-                            break
-                            
-                        elif upload_result['status'] == 'duplicate':
-                            # Files already exist on TJ (no new Creative IDs created)
-                            self.logger.warning(f"\n⚠ No new Creative IDs - files may already exist on TJ:")
-                            for file_record in valid_files:
-                                self.logger.warning(f"  - {file_record.get('new_filename')} (duplicate or already uploaded)")
-                                summary['skipped'] += 1
-                                self._save_upload_result(file_record, 'duplicate',
-                                                        error='File already exists on TJ (no new Creative ID)')
-                            summary['results'].append(upload_result)
-                            break
-                            
-                        elif upload_result['status'] == 'dry_run_success':
-                            self.logger.info(f"✓ Dry-run successful for batch (no actual upload)")
-                            for file_record in valid_files:
-                                summary['skipped'] += 1
-                                self._save_upload_result(file_record, 'dry_run')
-                            summary['results'].append(upload_result)
-                            break
-                            
-                        else:
-                            # Failed, will retry
-                            self.logger.warning(f"Batch upload failed: {upload_result.get('error', 'Unknown error')}")
-                            if attempt == max_retries - 1:
-                                # Final attempt failed
-                                self.logger.error(f"✗ Batch upload failed after {max_retries} attempts")
-                                for file_record in valid_files:
-                                    summary['failed'] += 1
-                                    self._save_upload_result(file_record, 'failed',
-                                                            error=upload_result.get('error'))
+                            # Check result
+                            if upload_result['status'] == 'success':
+                                # Match Creative IDs to files
+                                creative_ids = upload_result.get('creative_ids', [])
+                                self.logger.info(f"\n✓ Batch upload successful! {len(creative_ids)} Creative IDs extracted")
+                                
+                                # Save results for each file
+                                for i, (file_record, creative_id) in enumerate(zip(valid_files, creative_ids)):
+                                    self.logger.info(f"  [{i+1}] {file_record.get('new_filename')} → {creative_id}")
+                                    summary['successful'] += 1
+                                    self._save_upload_result(file_record, 'success', creative_id=creative_id)
+                                
+                                # Handle files without IDs (shouldn't happen, but just in case)
+                                if len(creative_ids) < len(valid_files):
+                                    self.logger.warning(f"⚠ Only got {len(creative_ids)} IDs for {len(valid_files)} files")
+                                    for i in range(len(creative_ids), len(valid_files)):
+                                        file_record = valid_files[i]
+                                        self.logger.warning(f"  No ID for: {file_record.get('new_filename')}")
+                                        summary['failed'] += 1
+                                        self._save_upload_result(file_record, 'failed',
+                                                                error='Creative ID not extracted')
+                                
                                 summary['results'].append(upload_result)
+                                break
+                                
+                            elif upload_result['status'] == 'duplicate':
+                                # Files already exist on TJ (no new Creative IDs created)
+                                self.logger.warning(f"\n⚠ No new Creative IDs - files may already exist on TJ:")
+                                for file_record in valid_files:
+                                    self.logger.warning(f"  - {file_record.get('new_filename')} (duplicate or already uploaded)")
+                                    summary['skipped'] += 1
+                                    self._save_upload_result(file_record, 'duplicate',
+                                                            error='File already exists on TJ (no new Creative ID)')
+                                summary['results'].append(upload_result)
+                                break
+                                
+                            elif upload_result['status'] == 'dry_run_success':
+                                self.logger.info(f"✓ Dry-run successful for batch (no actual upload)")
+                                for file_record in valid_files:
+                                    summary['skipped'] += 1
+                                    self._save_upload_result(file_record, 'dry_run')
+                                summary['results'].append(upload_result)
+                                break
+                                
+                            else:
+                                # Failed, will retry
+                                self.logger.warning(f"Batch upload failed: {upload_result.get('error', 'Unknown error')}")
+                                if attempt == max_retries - 1:
+                                    # Final attempt failed
+                                    self.logger.error(f"✗ Batch upload failed after {max_retries} attempts")
+                                    for file_record in valid_files:
+                                        summary['failed'] += 1
+                                        self._save_upload_result(file_record, 'failed',
+                                                                error=upload_result.get('error'))
+                                    summary['results'].append(upload_result)
                 
                 # Close browser
                 browser.close()
