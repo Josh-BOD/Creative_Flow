@@ -736,10 +736,32 @@ class UploadManager:
                         'Brand Name': 'PLACEHOLDER_BRAND'
                     })
                     
-                    # Save with proper naming: Batch{id}_Date_Time_Native.csv
+                    # Save main Native CSV (all pairs)
                     native_csv_path = self.upload_csv_dir / f"Batch{batch_id}_{date_time}_Native.csv"
                     native_csv.to_csv(native_csv_path, index=False, quoting=1)  # quoting=1 quotes all fields
                     self.logger.info(f"✓ Generated Native CSV: {native_csv_path.name} ({len(native_csv)} pairs)")
+                    
+                    # Split by category and save individual CSVs
+                    categories = native_pairs['category'].dropna().unique()
+                    for category in sorted(categories):
+                        category_pairs = native_pairs[native_pairs['category'] == category]
+                        
+                        category_csv = pd.DataFrame({
+                            'Ad Name': category_pairs['new_filename'].str.replace('.mp4', '', regex=False),
+                            'Target URL': 'PLACEHOLDER_URL',
+                            'Video Creative ID': category_pairs['tj_creative_id_video'].astype(int),
+                            'Thumbnail Creative ID': category_pairs['tj_creative_id_image'].astype(int),
+                            'Headline': category_pairs['category'].fillna('PLACEHOLDER_HEADLINE'),
+                            'Brand Name': 'PLACEHOLDER_BRAND'
+                        })
+                        
+                        # Sanitize category name for filename (remove spaces, special chars)
+                        safe_category = category.replace(' ', '').replace('/', '').replace('\\', '')
+                        category_csv_path = self.upload_csv_dir / f"Batch{batch_id}_{date_time}_Native_{safe_category}.csv"
+                        category_csv.to_csv(category_csv_path, index=False, quoting=1)
+                        self.logger.info(f"  ✓ {safe_category}: {len(category_csv)} pairs")
+                    
+                    self.logger.info(f"✓ Generated {len(categories)} category-specific Native CSVs")
             
             # === GENERATE PREROLL CSV ===
             # Filter regular files (no IMG_, VID_, or ORG_ prefixes)
@@ -762,10 +784,36 @@ class UploadManager:
                     'Tracking Pixel': ''
                 })
                 
-                # Save with proper naming: Batch{id}_Date_Time_Preroll.csv
+                # Save main Preroll CSV (all files)
                 preroll_csv_path = self.upload_csv_dir / f"Batch{batch_id}_{date_time}_Preroll.csv"
                 preroll_csv.to_csv(preroll_csv_path, index=False)
                 self.logger.info(f"✓ Generated Preroll CSV: {preroll_csv_path.name} ({len(preroll_csv)} files)")
+                
+                # Split by category and save individual CSVs
+                categories = preroll_files['category'].dropna().unique()
+                for category in sorted(categories):
+                    category_files = preroll_files[preroll_files['category'] == category]
+                    
+                    category_csv = pd.DataFrame({
+                        'Ad Name': category_files['new_filename'].str.replace(r'\.(mp4|jpg|png|gif)$', '', regex=True),
+                        'Target URL': 'PLACEHOLDER_URL',
+                        'Creative ID': category_files['tj_creative_id'].astype(int),
+                        'Custom CTA Text': 'PLACEHOLDER_CTA',
+                        'Custom CTA URL': 'PLACEHOLDER_URL',
+                        'Banner CTA Creative ID': '',
+                        'Banner CTA Title': '',
+                        'Banner CTA Subtitle': '',
+                        'Banner CTA URL': '',
+                        'Tracking Pixel': ''
+                    })
+                    
+                    # Sanitize category name for filename (remove spaces, special chars)
+                    safe_category = category.replace(' ', '').replace('/', '').replace('\\', '')
+                    category_csv_path = self.upload_csv_dir / f"Batch{batch_id}_{date_time}_Preroll_{safe_category}.csv"
+                    category_csv.to_csv(category_csv_path, index=False)
+                    self.logger.info(f"  ✓ {safe_category}: {len(category_csv)} files")
+                
+                self.logger.info(f"✓ Generated {len(categories)} category-specific Preroll CSVs")
             
             self.logger.info("✓ TJ_tool CSVs generated successfully")
             
