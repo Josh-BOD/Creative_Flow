@@ -50,11 +50,15 @@ class UploadManager:
         self.uploaded_dir = base_path / "uploaded"
         self.tracking_dir = base_path / "tracking"
         self.archive_dir = base_path / "archive"
-        self.screenshot_dir = base_path / "screenshots"
         self.session_dir = base_path / "data" / "session"
         
+        # Upload logs subdirectory (keeps tracking folder clean)
+        self.upload_logs_dir = self.tracking_dir / "upload_logs"
+        self.screenshot_dir = self.upload_logs_dir / "screenshots"
+        
         # Ensure directories exist
-        for directory in [self.tracking_dir, self.archive_dir, self.screenshot_dir, self.session_dir]:
+        for directory in [self.tracking_dir, self.archive_dir, self.upload_logs_dir, 
+                          self.screenshot_dir, self.session_dir]:
             directory.mkdir(parents=True, exist_ok=True)
         
         # Session CSV path
@@ -66,7 +70,7 @@ class UploadManager:
         
         # Upload status tracking
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        self.upload_status_csv = self.tracking_dir / f"upload_status_{timestamp}.csv"
+        self.upload_status_csv = self.upload_logs_dir / f"upload_status_{timestamp}.csv"
         self.upload_results = []
     
     def _setup_logger(self) -> logging.Logger:
@@ -84,8 +88,8 @@ class UploadManager:
         console_handler.setFormatter(console_formatter)
         logger.addHandler(console_handler)
         
-        # File handler
-        log_file = self.tracking_dir / f"upload_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
+        # File handler (save to upload_logs subdirectory)
+        log_file = self.upload_logs_dir / f"upload_log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt"
         file_handler = logging.FileHandler(log_file)
         file_handler.setLevel(logging.DEBUG)
         file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')

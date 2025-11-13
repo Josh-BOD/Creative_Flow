@@ -176,6 +176,10 @@ Creative Flow/
 │   ├── creative_inventory.csv               # Master inventory (all time)
 │   ├── creative_inventory_session.csv       # Session inventory (current run)
 │   ├── metadata_defaults.csv                # Folder/creator defaults
+│   └── upload_logs/                          # Upload system logs (organized)
+│       ├── upload_status_YYYYMMDD_HHMMSS.csv  # Upload status tracking
+│       ├── upload_log_YYYYMMDD_HHMMSS.txt     # Detailed upload logs
+│       └── screenshots/                        # Upload verification screenshots
 │   └── processed_ids.json                   # Used IDs (prevents duplicates)
 ├── TODO/
 │   ├── Questions.md

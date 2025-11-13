@@ -1,0 +1,11 @@
+# Ignore all upload logs and status files
+*.csv
+*.txt
+*.log
+
+# Ignore screenshots
+screenshots/
+
+# Keep this directory structure in git
+!.gitignore
+
