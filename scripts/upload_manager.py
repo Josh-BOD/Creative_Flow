@@ -736,11 +736,11 @@ class UploadManager:
                     # Create Native CSV in TJ_tool format
                     native_csv = pd.DataFrame({
                         'Ad Name': native_pairs['new_filename'].str.replace('.mp4', '', regex=False),
-                        'Target URL': 'PLACEHOLDER_URL',  # User will fill this in
+                        'Target URL': 'https://clk.ourdream.ai/68fee7d85d1066083925def9?ref=trafficjunky&sub1={CampaignID}&sub2={BLPID}&sub3={BLPName}&SiteName={SiteName}&SpotName={SpotName}&Location={Location}&sub7={BanID}&sub8={BanName}&sub9={AdID}&sub10={SpotID}&sub11=CPA-INDIAN-NATIVEVIDEO-DESKTOP-USA-RT_TEST&Keywords={Keywords}&ref_id={ACLID}&cost={BidValue}',
                         'Video Creative ID': native_pairs['tj_creative_id_video'].astype(int),
                         'Thumbnail Creative ID': native_pairs['tj_creative_id_image'].astype(int),
                         'Headline': native_pairs['category'].fillna('PLACEHOLDER_HEADLINE'),
-                        'Brand Name': 'PLACEHOLDER_BRAND'
+                        'Brand Name': 'ourdream.ai'
                     })
                     
                     # Save main Native CSV (all pairs)
@@ -755,11 +755,11 @@ class UploadManager:
                         
                         category_csv = pd.DataFrame({
                             'Ad Name': category_pairs['new_filename'].str.replace('.mp4', '', regex=False),
-                            'Target URL': 'PLACEHOLDER_URL',
+                            'Target URL': 'https://clk.ourdream.ai/68fee7d85d1066083925def9?ref=trafficjunky&sub1={CampaignID}&sub2={BLPID}&sub3={BLPName}&SiteName={SiteName}&SpotName={SpotName}&Location={Location}&sub7={BanID}&sub8={BanName}&sub9={AdID}&sub10={SpotID}&sub11=CPA-INDIAN-NATIVEVIDEO-DESKTOP-USA-RT_TEST&Keywords={Keywords}&ref_id={ACLID}&cost={BidValue}',
                             'Video Creative ID': category_pairs['tj_creative_id_video'].astype(int),
                             'Thumbnail Creative ID': category_pairs['tj_creative_id_image'].astype(int),
                             'Headline': category_pairs['category'].fillna('PLACEHOLDER_HEADLINE'),
-                            'Brand Name': 'PLACEHOLDER_BRAND'
+                            'Brand Name': 'ourdream.ai'
                         })
                         
                         # Sanitize category name for filename (remove spaces, special chars)
@@ -780,10 +780,10 @@ class UploadManager:
                 # Create Preroll CSV in TJ_tool format
                 preroll_csv = pd.DataFrame({
                     'Ad Name': preroll_files['new_filename'].str.replace(r'\.(mp4|jpg|png|gif)$', '', regex=True),
-                    'Target URL': 'PLACEHOLDER_URL',  # User will fill this in
+                    'Target URL': 'https://clk.ourdream.ai/68fee7d85d1066083925def9?ref=trafficjunky&sub1={CampaignID}&sub2={BLPID}&sub3={BLPName}&SiteName={SiteName}&SpotName={SpotName}&Location={Location}&sub7={BanID}&sub8={BanName}&sub9={AdID}&sub10={SpotID}&sub11=CPA-INDIAN-NATIVEVIDEO-DESKTOP-USA-RT_TEST&Keywords={Keywords}&ref_id={ACLID}&cost={BidValue}',
                     'Creative ID': preroll_files['tj_creative_id'].astype(int),
                     'Custom CTA Text': 'PLACEHOLDER_CTA',
-                    'Custom CTA URL': 'PLACEHOLDER_URL',
+                    'Custom CTA URL': 'https://clk.ourdream.ai/68fee7d85d1066083925def9?ref=trafficjunky&sub1={CampaignID}&sub2={BLPID}&sub3={BLPName}&SiteName={SiteName}&SpotName={SpotName}&Location={Location}&sub7={BanID}&sub8={BanName}&sub9={AdID}&sub10={SpotID}&sub11=CPA-INDIAN-NATIVEVIDEO-DESKTOP-USA-RT_TEST&Keywords={Keywords}&ref_id={ACLID}&cost={BidValue}',
                     'Banner CTA Creative ID': '',
                     'Banner CTA Title': '',
                     'Banner CTA Subtitle': '',
@@ -803,10 +803,10 @@ class UploadManager:
                     
                     category_csv = pd.DataFrame({
                         'Ad Name': category_files['new_filename'].str.replace(r'\.(mp4|jpg|png|gif)$', '', regex=True),
-                        'Target URL': 'PLACEHOLDER_URL',
+                        'Target URL': 'https://clk.ourdream.ai/68fee7d85d1066083925def9?ref=trafficjunky&sub1={CampaignID}&sub2={BLPID}&sub3={BLPName}&SiteName={SiteName}&SpotName={SpotName}&Location={Location}&sub7={BanID}&sub8={BanName}&sub9={AdID}&sub10={SpotID}&sub11=CPA-INDIAN-NATIVEVIDEO-DESKTOP-USA-RT_TEST&Keywords={Keywords}&ref_id={ACLID}&cost={BidValue}',
                         'Creative ID': category_files['tj_creative_id'].astype(int),
                         'Custom CTA Text': 'PLACEHOLDER_CTA',
-                        'Custom CTA URL': 'PLACEHOLDER_URL',
+                        'Custom CTA URL': 'https://clk.ourdream.ai/68fee7d85d1066083925def9?ref=trafficjunky&sub1={CampaignID}&sub2={BLPID}&sub3={BLPName}&SiteName={SiteName}&SpotName={SpotName}&Location={Location}&sub7={BanID}&sub8={BanName}&sub9={AdID}&sub10={SpotID}&sub11=CPA-INDIAN-NATIVEVIDEO-DESKTOP-USA-RT_TEST&Keywords={Keywords}&ref_id={ACLID}&cost={BidValue}',
                         'Banner CTA Creative ID': '',
                         'Banner CTA Title': '',
                         'Banner CTA Subtitle': '',
