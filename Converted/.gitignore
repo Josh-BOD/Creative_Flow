@@ -1,0 +1,4 @@
+# Ignore all files in Converted/ folder (original source files archive)
+*
+!.gitignore
+

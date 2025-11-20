@@ -696,8 +696,15 @@ class UploadManager:
             
             df = pd.read_csv(self.master_csv)
             
-            # Filter only files with TJ Creative IDs (uploaded)
-            df_uploaded = df[df['tj_creative_id'].notna() & (df['tj_creative_id'] != '')]
+            # Get unique IDs of files uploaded in THIS session
+            session_unique_ids = [result['unique_id'] for result in self.upload_results if result.get('status') == 'success']
+            
+            if not session_unique_ids:
+                self.logger.info("No files uploaded in this session to export")
+                return
+            
+            # Filter only files uploaded in THIS session
+            df_uploaded = df[df['unique_id'].isin(session_unique_ids) & df['tj_creative_id'].notna() & (df['tj_creative_id'] != '')]
             
             if df_uploaded.empty:
                 self.logger.info("No uploaded files with Creative IDs to export")
