@@ -42,17 +42,20 @@ If you want more control, you can use structured filenames:
 
 **Format:**
 ```
-{Language}_{Category}_{ModelSex}_{Style}_{Rating}_{Type}_{Creator}_{TestID}.{ext}
+{Language}_{Category}_{ModelSex}_{Style}_{Rating}_{Description}_{Creator}_{TestID}.{ext}
 ```
 
-**Example:**
+**Examples:**
 ```
 EN_Ahegao_F_Anime_NSFW_Generic_Seras_001.mp4
+EN_Lesbian_F_Real_NSFW_DemonKissing_Seras_001.mp4
+EN_Lesbian_F_Real_NSFW_Kissing_Seras_002.mp4
+EN_Hentai_F_Anime_NSFW_ThreePannel_Pedro_001.mp4
 ```
 
 **Field Definitions:**
 - **Language:** `EN` (English), `ES` (Spanish), `FR` (French), `JP` (Japanese)
-- **Category:** `Ahegao`, `Blowjob`, `Hentai`, `Cumshot`, etc.
+- **Category:** `Ahegao`, `Blowjob`, `Hentai`, `Cumshot`, `Lesbian`, etc.
 - **ModelSex:** 
   - `M` = Male
   - `F` = Female
@@ -63,9 +66,34 @@ EN_Ahegao_F_Anime_NSFW_Generic_Seras_001.mp4
   - `Real` = Realistic/live action
   - `Both` = Mix of styles
 - **Rating:** `SFW` or `NSFW`
-- **Type:** `Generic`, `Solo`, `3Pannel`, etc.
+- **Description:** Specific details about the creative (see below)
 - **Creator:** Your name (e.g., `Seras`, `Pedro`)
 - **TestID:** Optional test identifier (e.g., `001`, `A`, `Test1`)
+
+#### 💡 **Description Field - Add Specific Details!**
+
+The **Description** field lets you add specific details to distinguish variants within the same category:
+
+**Examples:**
+- `Generic` - Standard/default creative
+- `DemonKissing` - Lesbian demon kissing scene
+- `Kissing` - Regular kissing scene
+- `Solo` - Solo performer
+- `SoloFemale` - Solo female performer
+- `ThreePannel` - 3-panel layout
+- `POV` - Point of view style
+- `Closeup` - Closeup shots
+- `FullBody` - Full body shots
+- `Outdoor` - Outdoor scene
+- `Compilation` - Compilation of clips
+
+**How it affects your final filename:**
+```
+Input:  EN_Lesbian_F_Real_NSFW_DemonKissing_Seras_001.mp4
+Output: EN_Lesbian_F_Real_NSFW_DemonKissing_Seras_5sec_ID-ABC123.mp4
+```
+
+This makes it easy to identify specific variants when managing campaigns!
 
 ---
 
@@ -88,14 +116,43 @@ EN_Ahegao_F_Anime_NSFW_Generic_Seras_001.mp4
 
 For **each folder**, we need to know:
 
-1. **Category** (e.g., Ahegao, Blowjob, Hentai)
+1. **Category** (e.g., Ahegao, Blowjob, Hentai, Lesbian)
 2. **Model Sex:** M (Male), F (Female), T (Trans), or MFT (All)
 3. **Style:** Anime, Real, or Both
 4. **Creator Name** (e.g., Seras, Pedro, Maria)
 5. **Language** (e.g., EN, ES, FR, JP)
 6. **Content Type:** SFW or NSFW
-7. **Description:** Brief description (e.g., "Generic", "Solo Female", "3 Panel")
+7. **Description:** Specific details about the creative (**Important!** - see examples below)
 8. **Test ID** (optional): If this is a test variant (e.g., "001", "A", "Fall-Sale")
+
+### 💡 **Using the Description Field**
+
+The **Description** field is where you add specific details to help identify variants within the same category.
+
+**Instead of just "Generic", be specific:**
+
+✅ **Good Examples:**
+- `DemonKissing` - for lesbian demon kissing scenes
+- `Kissing` - for regular kissing scenes
+- `ThreePannel` - for 3-panel layout creatives
+- `Solo` - for solo performer content
+- `POV` - for point-of-view style
+- `Closeup` - for closeup shots
+- `Compilation` - for compilation videos
+
+❌ **Less Helpful:**
+- `Generic` - too vague (but OK if nothing specific applies)
+
+**How this helps you:**
+- Makes it easy to find specific creatives in your library
+- Helps distinguish between similar content in the same category
+- Final filename will include this description for easy identification
+
+**Example of how it appears in filenames:**
+```
+EN_Lesbian_F_Real_NSFW_DemonKissing_Seras_5sec_ID-ABC123.mp4
+EN_Lesbian_F_Real_NSFW_Kissing_Seras_5sec_ID-XYZ789.mp4
+```
 
 **You only need to provide this once per folder!** We'll save it for future uploads.
 
@@ -154,6 +211,40 @@ After you submit your creatives:
 5. **CSV Generation:** You receive category-specific CSVs for campaign setup
 6. **Tracking:** All creatives get unique IDs and are tracked in our master inventory
 
+### **Example Processing Flow:**
+
+**You submit:**
+```
+Lesbian-demon-kissing/
+├── video1.mp4
+├── video2.mp4
+└── video3.mp4
+```
+
+**When prompted, you enter:**
+- Category: `Lesbian`
+- Model Sex: `F`
+- Style: `Real`
+- Creator: `Seras`
+- Language: `EN`
+- Content Type: `NSFW`
+- Description: `DemonKissing` ← Specific detail!
+- Test ID: (leave blank)
+
+**System generates:**
+```
+EN_Lesbian_F_Real_NSFW_DemonKissing_Seras_5sec_ID-ABC123.mp4
+EN_Lesbian_F_Real_NSFW_DemonKissing_Seras_6sec_ID-XYZ456.mp4
+EN_Lesbian_F_Real_NSFW_DemonKissing_Seras_4sec_ID-DEF789.mp4
+```
+
+**For Native ads, you also get:**
+```
+VID_EN_Lesbian_F_Real_NSFW_DemonKissing_Seras_4sec_ID-ABC123-VID.mp4
+IMG_EN_Lesbian_F_Real_NSFW_DemonKissing_Seras_ID-ABC123-IMG.png
+(and pairs for each video)
+```
+
 ---
 
 ## 🆘 Need Help?
@@ -174,6 +265,22 @@ A: You'll receive a CSV inventory with all file details, Creative IDs, and uploa
 
 **Q: What if my video is 35 seconds?**
 A: Trim it to 31 seconds or less for In-Stream videos. Native videos can be any length.
+
+**Q: What should I put in the Description field?**
+A: Be specific! Instead of "Generic", use details like:
+- `DemonKissing`, `Kissing`, `HotKissing` for kiss scenes
+- `Solo`, `SoloFemale`, `SoloMale` for solo content
+- `ThreePannel`, `TwoPannel` for multi-panel layouts
+- `POV`, `Closeup`, `FullBody` for camera angles
+- `Compilation` for compilation videos
+- `Outdoor`, `Indoor`, `Pool`, `Bedroom` for locations
+
+**Q: Can I have multiple folders with the same category but different descriptions?**
+A: Yes! For example:
+- `Lesbian-demon-kissing/` with Description: `DemonKissing`
+- `Lesbian-regular-kissing/` with Description: `Kissing`
+- `Lesbian-threesome/` with Description: `Threesome`
+All will be categorized as "Lesbian" but with different descriptions in the filename.
 
 ---
 

@@ -479,6 +479,52 @@ class CreativeProcessor:
             return None
         return parent_folder
     
+    def extract_description_from_filename(self, filename, category):
+        """
+        Extract specific description from filename if present.
+        
+        Examples:
+            filename: "lesbian demon kiss.mp4", category: "Lesbian"
+            returns: "DemonKiss"
+            
+            filename: "latina cowgirl.mp4", category: "Latina"
+            returns: "Cowgirl"
+            
+            filename: "lesbian kissing 2.mp4", category: "Lesbian"
+            returns: "Kissing"
+        
+        Args:
+            filename: The original filename
+            category: The category name (e.g., "Lesbian", "Latina")
+        
+        Returns:
+            Extracted description in PascalCase, or None if no description found
+        """
+        if not category:
+            return None
+        
+        # Remove file extension and convert to lowercase for matching
+        name_without_ext = Path(filename).stem.lower()
+        category_lower = category.lower()
+        
+        # Remove the category name from the beginning of the filename
+        if name_without_ext.startswith(category_lower):
+            # Remove category prefix
+            description_part = name_without_ext[len(category_lower):].strip()
+            
+            # Remove leading/trailing spaces, numbers, and special chars
+            description_part = re.sub(r'^[\s\d\-_]+', '', description_part)
+            description_part = re.sub(r'[\s\d\-_]+$', '', description_part)
+            
+            if description_part:
+                # Convert to PascalCase (remove spaces, capitalize each word)
+                # e.g., "demon kiss" -> "DemonKiss", "pussy rubbing" -> "PussyRubbing"
+                words = description_part.split()
+                pascal_case = ''.join(word.capitalize() for word in words)
+                return pascal_case
+        
+        return None
+    
     def resolve_metadata(self, file_path, parsed_data):
         """
         Resolve metadata using priority order:
@@ -523,28 +569,46 @@ class CreativeProcessor:
             if folder_category in self.metadata_defaults:
                 defaults = self.metadata_defaults[folder_category]
                 # Use category_name from CSV if available, otherwise use folder name
-                metadata['category'] = defaults.get('category_name', folder_category)
+                category_name = defaults.get('category_name', folder_category)
+                metadata['category'] = category_name
                 metadata['model_sex'] = defaults.get('model_sex', 'MFT')
                 metadata['style'] = defaults.get('style', 'Both')
                 metadata['creator_name'] = defaults.get('creator_name')
                 metadata['language'] = defaults.get('language')
                 metadata['content_type'] = defaults.get('content_type')
-                metadata['creative_name'] = defaults.get('creative_description', 'Generic')
-                metadata['test_id'] = defaults.get('test_id', None)  # Optional test ID
-                return metadata, "Pattern 2 (Simple), defaults applied"
+                
+                # Try to extract specific description from filename
+                extracted_description = self.extract_description_from_filename(file_path.name, category_name)
+                if extracted_description:
+                    metadata['creative_name'] = extracted_description
+                    metadata['test_id'] = defaults.get('test_id', None)
+                    return metadata, "Pattern 2 (Simple), description auto-extracted from filename"
+                else:
+                    metadata['creative_name'] = defaults.get('creative_description', 'Generic')
+                    metadata['test_id'] = defaults.get('test_id', None)
+                    return metadata, "Pattern 2 (Simple), defaults applied"
             
             # If interactive mode and folder not in defaults, prompt user
             if self.interactive and not self.dry_run:
                 defaults = self._prompt_for_folder_defaults(folder_category)
-                metadata['category'] = defaults.get('category_name', folder_category)
+                category_name = defaults.get('category_name', folder_category)
+                metadata['category'] = category_name
                 metadata['model_sex'] = defaults.get('model_sex', 'MFT')
                 metadata['style'] = defaults.get('style', 'Both')
                 metadata['creator_name'] = defaults.get('creator_name')
                 metadata['language'] = defaults.get('language')
                 metadata['content_type'] = defaults.get('content_type')
-                metadata['creative_name'] = defaults.get('creative_description', 'Generic')
-                metadata['test_id'] = defaults.get('test_id', None)  # Optional test ID
-                return metadata, "Pattern 2 (Simple), interactive defaults added"
+                
+                # Try to extract specific description from filename
+                extracted_description = self.extract_description_from_filename(file_path.name, category_name)
+                if extracted_description:
+                    metadata['creative_name'] = extracted_description
+                    metadata['test_id'] = defaults.get('test_id', None)
+                    return metadata, "Pattern 2 (Simple), interactive defaults + auto-extracted description"
+                else:
+                    metadata['creative_name'] = defaults.get('creative_description', 'Generic')
+                    metadata['test_id'] = defaults.get('test_id', None)
+                    return metadata, "Pattern 2 (Simple), interactive defaults added"
             
             # No match in CSV and not interactive, use folder name as category
             metadata['category'] = folder_category
